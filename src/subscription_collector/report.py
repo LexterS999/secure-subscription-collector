@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from statistics import median
 
 from .models import RunStats, SourceResult
 
@@ -13,8 +14,9 @@ def build_report(
     stats: RunStats,
     max_age_hours: int,
     strict_first_seen: bool,
+    verification_enabled: bool,
 ) -> dict[str, object]:
-    """Build a redacted audit record that contains no subscription payloads or secrets."""
+    """Build a redacted audit record with aggregate source and validation outcomes only."""
     source_rows = [
         {
             "freshness": source.freshness.value,
@@ -31,6 +33,16 @@ def build_report(
         "policy": "Strict Secure",
         "max_source_age_hours": max_age_hours,
         "strict_first_seen": strict_first_seen,
+        "validation": {
+            "enabled": verification_enabled,
+            "probe_urls_per_profile": 4 if verification_enabled else 0,
+            "required_successes": 2 if verification_enabled else 0,
+            "median_latency_ms": (
+                round(median(stats.validation_median_latencies_ms))
+                if stats.validation_median_latencies_ms
+                else None
+            ),
+        },
         "sources": source_rows,
         "counts": {
             "input_sources": stats.input_sources,
@@ -39,6 +51,9 @@ def build_report(
             "parsed_profiles": stats.parsed_profiles,
             "accepted_profiles": stats.accepted_profiles,
             "unique_profiles": stats.unique_profiles,
+            "validation_attempted": stats.validation_attempted,
+            "validation_passed": stats.validation_passed,
+            "validation_failed": stats.validation_failed,
             "emitted_profiles": stats.emitted_profiles,
             "source_freshness": dict(sorted(stats.source_freshness.items())),
             "excluded": dict(sorted(stats.excluded.items())),

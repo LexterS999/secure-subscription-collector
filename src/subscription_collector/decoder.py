@@ -4,21 +4,7 @@ import base64
 import binascii
 from urllib.parse import urlsplit
 
-from .models import Protocol
-
-SUPPORTED_SCHEMES = {protocol.value for protocol in Protocol} | {"hy2", "wg", "tg"}
-REJECTED_SCHEMES = {
-    "socks",
-    "socks4",
-    "socks5",
-    "http",
-    "https",
-    "ssr",
-    "brook",
-    "snell",
-    "mieru",
-}
-KNOWN_SCHEMES = SUPPORTED_SCHEMES | REJECTED_SCHEMES
+SUPPORTED_SCHEMES = {"vless", "trojan", "hy2", "hysteria2", "tuic"}
 
 
 def _uri_lines(text: str) -> list[str]:
@@ -32,7 +18,7 @@ def _uri_lines(text: str) -> list[str]:
             scheme = urlsplit(line).scheme.lower()
         except ValueError:
             continue
-        if scheme in KNOWN_SCHEMES and line not in seen:
+        if scheme in SUPPORTED_SCHEMES and line not in seen:
             seen.add(line)
             values.append(line)
     return values
@@ -40,10 +26,8 @@ def _uri_lines(text: str) -> list[str]:
 
 def _decode_base64(value: str) -> str | None:
     compact = "".join(value.split())
-    if not compact or any(
-        character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+/="
-        for character in compact
-    ):
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+/="
+    if not compact or any(character not in allowed for character in compact):
         return None
     try:
         padded = compact + "=" * (-len(compact) % 4)
@@ -53,7 +37,7 @@ def _decode_base64(value: str) -> str | None:
 
 
 def extract_candidate_lines(source_text: str) -> list[str]:
-    """Extract known URI lines from plain text or exactly one base64 envelope."""
+    """Extract supported URI lines from plain text or exactly one base64 envelope."""
     direct = _uri_lines(source_text)
     if direct:
         return direct

@@ -1,30 +1,41 @@
 from __future__ import annotations
 
-from urllib.parse import quote
+from .dedup import compact_code
+from .models import Profile, Protocol
 
-from .models import Profile
-
-
-def _display_security(profile: Profile) -> str:
-    if profile.protocol.value == "ss":
-        return profile.params.get("method", "aead").upper()
-    return profile.security.upper()
+_PROTOCOL_LABELS = {
+    Protocol.VLESS: "VL",
+    Protocol.TROJAN: "TR",
+    Protocol.HYSTERIA2: "HY2",
+    Protocol.TUIC: "TUIC",
+}
+_TRANSPORT_LABELS = {
+    "raw": "TCP",
+    "tcp": "TCP",
+    "ws": "WS",
+    "websocket": "WS",
+    "grpc": "GRPC",
+    "h2": "H2",
+    "httpupgrade": "HUP",
+    "xhttp": "XHTTP",
+    "udp": "UDP",
+}
 
 
 def _display_transport(profile: Profile) -> str:
-    return profile.transport.upper() if profile.transport else "TCP"
+    if profile.protocol in {Protocol.HYSTERIA2, Protocol.TUIC}:
+        return "UDP"
+    return _TRANSPORT_LABELS.get(profile.transport.lower(), "TCP")
 
 
 def render_named_uri(profile: Profile, fingerprint: str) -> str:
-    """Attach a deterministic display-only label without exposing secret fields."""
-    label = " • ".join(
+    """Attach a readable ASCII fragment accepted by standard Android URI importers."""
+    label = "-".join(
         (
-            profile.protocol.value.upper(),
-            _display_security(profile),
+            _PROTOCOL_LABELS[profile.protocol],
+            profile.security.upper(),
             _display_transport(profile),
-            profile.server,
-            str(profile.port),
-            fingerprint[:6].upper(),
+            compact_code(fingerprint),
         )
     )
-    return f"{profile.original_uri.split('#', 1)[0]}#{quote(label, safe='')}"
+    return f"{profile.original_uri.split('#', 1)[0]}#{label}"

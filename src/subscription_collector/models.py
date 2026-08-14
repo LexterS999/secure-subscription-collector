@@ -7,16 +7,9 @@ from enum import StrEnum
 
 class Protocol(StrEnum):
     VLESS = "vless"
-    VMESS = "vmess"
     TROJAN = "trojan"
-    SS = "ss"
     HYSTERIA2 = "hysteria2"
     TUIC = "tuic"
-    WIREGUARD = "wireguard"
-    NAIVE = "naive"
-    ANYTLS = "anytls"
-    JUICITY = "juicity"
-    MTPROTO = "mtproto"
 
 
 class Freshness(StrEnum):
@@ -67,6 +60,14 @@ class SeenRecord:
     last_seen_at: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeResult:
+    passed: bool
+    successes: int
+    median_latency_ms: int | None
+    error_category: str | None = None
+
+
 @dataclass(slots=True)
 class RunStats:
     input_sources: int = 0
@@ -76,6 +77,10 @@ class RunStats:
     parsed_profiles: int = 0
     accepted_profiles: int = 0
     unique_profiles: int = 0
+    validation_attempted: int = 0
+    validation_passed: int = 0
+    validation_failed: int = 0
+    validation_median_latencies_ms: list[int] = field(default_factory=list)
     emitted_profiles: int = 0
     excluded: dict[str, int] = field(default_factory=dict)
 

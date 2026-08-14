@@ -6,32 +6,66 @@ from collections.abc import Iterable
 
 from .models import Profile
 
+_BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-def profile_fingerprint(profile: Profile) -> str:
-    """Return a stable hash of security-significant data, excluding display/source metadata."""
-    material = {
+
+def _canonical_material(profile: Profile) -> dict[str, object]:
+    return {
         "protocol": profile.protocol.value,
-        "server": profile.server,
+        "server": profile.server.lower(),
         "port": profile.port,
         "username": profile.username,
         "secret": profile.secret,
-        "security": profile.security,
-        "transport": profile.transport,
-        "params": dict(sorted(profile.params.items())),
+        "security": profile.security.lower(),
+        "transport": profile.transport.lower(),
+        "params": dict(sorted((key.lower(), value) for key, value in profile.params.items())),
     }
-    encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
-        "utf-8"
-    )
+
+
+def profile_fingerprint(profile: Profile) -> str:
+    """Return the exact connection identity without source or display metadata."""
+    encoded = json.dumps(
+        _canonical_material(profile),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
+def client_compatibility_key(profile: Profile) -> tuple[str, str, int, str]:
+    """Return v2rayNG-style normalized endpoint/credential fields for safe grouping only."""
+    credential = profile.secret if profile.secret is not None else profile.username or ""
+    return (
+        profile.protocol.value,
+        profile.server.lower(),
+        profile.port,
+        credential.strip().lower(),
+    )
+
+
 def deduplicate(profiles: Iterable[Profile]) -> list[Profile]:
-    """Keep the first canonical instance of each semantic profile."""
+    """Remove cosmetic duplicates without collapsing profiles with distinct connection settings."""
     result: list[Profile] = []
-    seen: set[str] = set()
+    seen_exact: set[str] = set()
+    compatibility_groups: dict[tuple[str, str, int, str], set[str]] = {}
     for profile in profiles:
         fingerprint = profile_fingerprint(profile)
-        if fingerprint not in seen:
-            seen.add(fingerprint)
-            result.append(profile)
+        compatibility_key = client_compatibility_key(profile)
+        group = compatibility_groups.setdefault(compatibility_key, set())
+        if fingerprint in group or fingerprint in seen_exact:
+            continue
+        group.add(fingerprint)
+        seen_exact.add(fingerprint)
+        result.append(profile)
     return result
+
+
+def compact_code(fingerprint: str) -> str:
+    """Derive a stable six-character base62 code from the canonical SHA-256 digest."""
+    value = int(fingerprint[:16], 16) % (len(_BASE62) ** 6)
+    characters: list[str] = []
+    for _ in range(6):
+        value, remainder = divmod(value, len(_BASE62))
+        characters.append(_BASE62[remainder])
+    return "".join(reversed(characters))
