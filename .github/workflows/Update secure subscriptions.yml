@@ -45,8 +45,10 @@ jobs:
           PYTHONPATH=src python -m subscription_collector \
             --input input.txt \
             --sing-box-path "$SING_BOX_PATH" \
-            --probe-timeout-seconds 10 \
-            --probe-concurrency 8
+            --probe-timeout-seconds 0.3 \
+            --probe-startup-timeout-seconds 3 \
+            --probe-concurrency 8 \
+            --probe-batch-size 32
       - name: Commit changed outputs
         run: |
           if git diff --quiet -- output.txt report.json .collector/state.json; then
