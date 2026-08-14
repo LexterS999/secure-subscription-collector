@@ -28,7 +28,10 @@ def _uri_lines(text: str) -> list[str]:
         line = raw_line.strip()
         if not line:
             continue
-        scheme = urlsplit(line).scheme.lower()
+        try:
+            scheme = urlsplit(line).scheme.lower()
+        except ValueError:
+            continue
         if scheme in KNOWN_SCHEMES and line not in seen:
             seen.add(line)
             values.append(line)

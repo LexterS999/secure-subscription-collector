@@ -435,3 +435,40 @@ def test_fetcher_rejects_redirect_with_credentials() -> None:
         assert requests == ["https://source.example/list"]
 
     asyncio.run(exercise())
+
+
+def test_decoder_ignores_malformed_ipv6_after_base64_decoding() -> None:
+    """Catches a malformed decoded URI that previously aborted the whole collector run."""
+    malformed = "vless://123e4567-e89b-12d3-a456-426614174000@[broken:443?security=tls"
+    payload = base64.b64encode(f"{malformed}\n{VLESS_SECURE}\n".encode()).decode()
+    assert extract_candidate_lines(payload) == [VLESS_SECURE]
+
+
+def test_input_reader_converts_malformed_ipv6_url_to_input_error(tmp_path: Path) -> None:
+    """Catches a malformed input source URL escaping the CLI's documented InputError contract."""
+    source_file = tmp_path / "input.txt"
+    source_file.write_text("https://[broken\n", encoding="utf-8")
+    with pytest.raises(InputError):
+        read_input_urls(source_file)
+
+
+def test_fetcher_keeps_other_sources_when_redirect_location_is_malformed() -> None:
+    """Catches one malformed redirect URL aborting collection from unrelated valid sources."""
+
+    async def exercise() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "broken.example":
+                return httpx.Response(302, headers={"Location": "https://[broken"})
+            return httpx.Response(200, text=VLESS_SECURE)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            results = await fetch_sources(
+                ["https://broken.example/list", "https://good.example/list"],
+                client,
+                datetime.now(UTC),
+            )
+        assert [result.freshness for result in results] == [Freshness.FAILED, Freshness.UNKNOWN]
+        assert results[0].reason == "redirect_invalid_location"
+        assert results[1].text == VLESS_SECURE
+
+    asyncio.run(exercise())

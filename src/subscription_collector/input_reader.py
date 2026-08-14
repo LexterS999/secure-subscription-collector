@@ -21,7 +21,10 @@ def read_input_urls(path: Path) -> list[str]:
         line = raw_line.split("#", 1)[0].strip()
         if not line:
             continue
-        parsed = urlsplit(line)
+        try:
+            parsed = urlsplit(line)
+        except ValueError as error:
+            raise InputError(f"input URL is malformed: {line}") from error
         if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
             raise InputError(f"input URL must be an HTTPS URL without credentials: {line}")
         if line not in seen:

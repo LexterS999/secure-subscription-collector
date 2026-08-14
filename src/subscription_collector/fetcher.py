@@ -47,9 +47,17 @@ async def _fetch_one(
                         return SourceResult(
                             url, Freshness.FAILED, None, reason="redirect_without_location"
                         )
-                    next_url = str(response.url.join(location))
-                    next_parts = urlsplit(next_url)
-                    if next_parts.scheme != "https":
+                    try:
+                        location_parts = urlsplit(location)
+                        if location_parts.scheme and not location_parts.netloc:
+                            raise ValueError("redirect URL has no host")
+                        next_url = str(response.url.join(location))
+                        next_parts = urlsplit(next_url)
+                    except ValueError:
+                        return SourceResult(
+                            url, Freshness.FAILED, None, reason="redirect_invalid_location"
+                        )
+                    if next_parts.scheme != "https" or not next_parts.netloc:
                         return SourceResult(
                             url, Freshness.FAILED, None, reason="redirect_non_https"
                         )
