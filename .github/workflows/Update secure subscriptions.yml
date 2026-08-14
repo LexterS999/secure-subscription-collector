@@ -47,8 +47,11 @@ jobs:
             --sing-box-path "$SING_BOX_PATH" \
             --probe-timeout-seconds 0.3 \
             --probe-startup-timeout-seconds 3 \
-            --probe-concurrency 8 \
-            --probe-batch-size 32
+            --source-concurrency 32 \
+            --analysis-workers 32 \
+            --analysis-batch-size 1024 \
+            --probe-concurrency 32 \
+            --probe-batch-size 256
       - name: Commit changed outputs
         run: |
           if git diff --quiet -- output.txt report.json .collector/state.json; then
