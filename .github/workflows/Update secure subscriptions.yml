@@ -22,11 +22,33 @@ jobs:
           python-version: '3.12'
       - name: Install runtime dependencies
         run: python -m pip install -r requirements.txt
-      - name: Collect and statically filter subscriptions
+      - name: Download and verify Xray core
+        env:
+          XRAY_VERSION: v26.3.27
+        run: |
+          set -euo pipefail
+          xray_dir="$RUNNER_TEMP/xray-core"
+          base_url="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}"
+          rm -rf "$xray_dir"
+          mkdir -p "$xray_dir"
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output "$xray_dir/Xray-linux-64.zip" \
+            "$base_url/Xray-linux-64.zip"
+          curl --fail --location --retry 3 --retry-all-errors \
+            --output "$xray_dir/Xray-linux-64.zip.dgst" \
+            "$base_url/Xray-linux-64.zip.dgst"
+          expected_sha512="$(sed -n 's/^SHA2-512= //p' "$xray_dir/Xray-linux-64.zip.dgst")"
+          test -n "$expected_sha512"
+          printf '%s  %s\n' "$expected_sha512" "$xray_dir/Xray-linux-64.zip" | sha512sum --check --status
+          unzip -q "$xray_dir/Xray-linux-64.zip" -d "$xray_dir"
+          chmod 0755 "$xray_dir/xray"
+          "$xray_dir/xray" version
+      - name: Collect and validate subscriptions through Xray
         run: |
           PYTHONPATH=src python -m subscription_collector \
             --input input.txt \
             --output-dir output \
+            --xray-path "$RUNNER_TEMP/xray-core/xray" \
             --source-concurrency 32 \
             --analysis-workers 32 \
             --analysis-batch-size 1024
@@ -41,3 +63,6 @@ jobs:
           git add output report.json .collector/state.json
           git commit -m "chore: update subscription outputs [skip ci]"
           git push
+      - name: Remove temporary Xray core
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/xray-core"
