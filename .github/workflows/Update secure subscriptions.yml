@@ -46,7 +46,7 @@ jobs:
             --input input.txt \
             --sing-box-path "$SING_BOX_PATH" \
             --probe-timeout-seconds 10 \
-            --probe-concurrency 4
+            --probe-concurrency 8
       - name: Commit changed outputs
         run: |
           if git diff --quiet -- output.txt report.json .collector/state.json; then
