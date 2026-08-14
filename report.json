@@ -1,0 +1,149 @@
+{
+  "counts": {
+    "accepted_profiles": 23713,
+    "candidate_lines": 58109,
+    "emitted_profiles": 10546,
+    "excluded": {
+      "insecure_flag": 3983,
+      "invalid_or_unsupported": 171,
+      "invalid_reality_key": 21,
+      "legacy_cipher": 328,
+      "missing_fingerprint": 6406,
+      "missing_required_secret": 12639,
+      "missing_security": 8666,
+      "missing_sni": 2160,
+      "response_too_large": 2,
+      "unsupported_transport": 22
+    },
+    "fetched_sources": 21,
+    "input_sources": 23,
+    "parsed_profiles": 57938,
+    "source_freshness": {
+      "failed": 2,
+      "recent": 1,
+      "unknown": 20
+    },
+    "unique_profiles": 10546
+  },
+  "generated_at": "2026-08-14T10:08:35Z",
+  "max_source_age_hours": 72,
+  "policy": "Strict Secure",
+  "sources": [
+    {
+      "freshness": "recent",
+      "last_modified": "2026-08-14T09:54:22+00:00",
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "response_too_large"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "response_too_large"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    }
+  ],
+  "strict_first_seen": false
+}
