@@ -1,43 +1,56 @@
 {
   "counts": {
-    "accepted_profiles": 21914,
-    "candidate_lines": 53476,
-    "emitted_profiles": 54,
+    "accepted_profiles": 17727,
+    "candidate_lines": 42463,
+    "emitted_profiles": 9396,
     "excluded": {
-      "insecure_flag": 3813,
+      "insecure_flag": 3229,
       "invalid_or_unsupported": 6,
-      "invalid_reality_key": 21,
-      "missing_fingerprint": 6507,
-      "missing_required_secret": 12238,
-      "missing_security": 7195,
-      "missing_sni": 1752,
+      "invalid_reality_key": 20,
+      "missing_fingerprint": 5178,
+      "missing_required_secret": 9684,
+      "missing_security": 5171,
+      "missing_sni": 1431,
       "response_too_large": 2,
-      "unsupported_transport": 30,
-      "validation:http_error": 601,
-      "validation:quorum": 6,
-      "validation:runner_error": 22,
-      "validation:timeout": 9374
+      "unsupported_transport": 17
     },
-    "fetched_sources": 21,
-    "input_sources": 23,
-    "parsed_profiles": 53470,
+    "fetched_sources": 16,
+    "input_sources": 18,
+    "parsed_profiles": 42457,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
-      "unknown": 20
+      "unknown": 15
     },
-    "unique_profiles": 10057,
-    "validation_attempted": 10057,
-    "validation_failed": 10003,
-    "validation_passed": 54
+    "unique_profiles": 9396
   },
-  "generated_at": "2026-08-14T12:03:03Z",
+  "generated_at": "2026-08-14T13:27:09Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
+  "publication": {
+    "protocols": {
+      "hysteria2": {
+        "new": 150,
+        "total": 150
+      },
+      "trojan": {
+        "new": 1663,
+        "total": 1663
+      },
+      "tuic": {
+        "new": 0,
+        "total": 0
+      },
+      "vless": {
+        "new": 7583,
+        "total": 7583
+      }
+    }
+  },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-14T11:02:48+00:00",
+      "last_modified": "2026-08-14T09:59:49+00:00",
       "reason": null
     },
     {
@@ -54,31 +67,6 @@
       "freshness": "failed",
       "last_modified": null,
       "reason": "response_too_large"
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
     },
     {
       "freshness": "unknown",
@@ -153,17 +141,10 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 269,
-    "profile_validation": 1207831,
-    "publication": 73,
-    "sources_fetch": 876,
-    "static_filter": 4943,
-    "total": 1213994
-  },
-  "validation": {
-    "enabled": true,
-    "median_latency_ms": 1790,
-    "probe_urls_per_profile": 4,
-    "required_successes": 2
+    "deduplication": 199,
+    "publication": 680,
+    "sources_fetch": 1746,
+    "static_filter": 4058,
+    "total": 6683
   }
 }
