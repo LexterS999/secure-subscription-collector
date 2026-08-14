@@ -1,37 +1,43 @@
 {
   "counts": {
-    "accepted_profiles": 23713,
-    "candidate_lines": 58109,
-    "emitted_profiles": 10546,
+    "accepted_profiles": 21910,
+    "candidate_lines": 53471,
+    "emitted_profiles": 117,
     "excluded": {
-      "insecure_flag": 3983,
-      "invalid_or_unsupported": 171,
+      "insecure_flag": 3812,
+      "invalid_or_unsupported": 6,
       "invalid_reality_key": 21,
-      "legacy_cipher": 328,
-      "missing_fingerprint": 6406,
-      "missing_required_secret": 12639,
-      "missing_security": 8666,
-      "missing_sni": 2160,
+      "missing_fingerprint": 6509,
+      "missing_required_secret": 12236,
+      "missing_security": 7196,
+      "missing_sni": 1751,
       "response_too_large": 2,
-      "unsupported_transport": 22
+      "unsupported_transport": 30,
+      "validation:http_error": 2043,
+      "validation:quorum": 24,
+      "validation:runner_error": 12,
+      "validation:timeout": 7857
     },
     "fetched_sources": 21,
     "input_sources": 23,
-    "parsed_profiles": 57938,
+    "parsed_profiles": 53465,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 20
     },
-    "unique_profiles": 10546
+    "unique_profiles": 10053,
+    "validation_attempted": 10053,
+    "validation_failed": 9936,
+    "validation_passed": 117
   },
-  "generated_at": "2026-08-14T10:08:35Z",
+  "generated_at": "2026-08-14T11:42:22Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-14T09:54:22+00:00",
+      "last_modified": "2026-08-14T09:59:49+00:00",
       "reason": null
     },
     {
@@ -145,5 +151,19 @@
       "reason": null
     }
   ],
-  "strict_first_seen": false
+  "strict_first_seen": false,
+  "timing_ms": {
+    "deduplication": 190,
+    "profile_validation": 655931,
+    "publication": 566,
+    "sources_fetch": 1352,
+    "static_filter": 2055,
+    "total": 660096
+  },
+  "validation": {
+    "enabled": true,
+    "median_latency_ms": 252,
+    "probe_urls_per_profile": 4,
+    "required_successes": 2
+  }
 }
