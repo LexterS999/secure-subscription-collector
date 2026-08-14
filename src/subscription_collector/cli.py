@@ -111,12 +111,12 @@ async def run_collection(
     fail_on_empty: bool,
     xray_path: Path,
     source_concurrency: int = 32,
-    analysis_workers: int = 32,
+    analysis_workers: int = 120,
     analysis_batch_size: int = 1024,
-    probe_timeout_seconds: float = 3.0,
-    probe_startup_timeout_seconds: float = 5.0,
-    probe_concurrency: int = 8,
-    probe_batch_size: int = 32,
+    probe_timeout_seconds: float = 0.75,
+    probe_startup_timeout_seconds: float = 1.0,
+    probe_concurrency: int = 32,
+    probe_batch_size: int = 256,
     client: httpx.AsyncClient | None = None,
 ) -> int:
     """Collect, statically filter, Xray-validate, and publish supported profiles."""
@@ -352,12 +352,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--strict-first-seen", action="store_true")
     parser.add_argument("--fail-on-empty", action="store_true")
     parser.add_argument("--xray-path", type=Path, required=True)
-    parser.add_argument("--probe-timeout-seconds", type=float, default=3.0)
-    parser.add_argument("--probe-startup-timeout-seconds", type=float, default=5.0)
-    parser.add_argument("--probe-concurrency", type=int, default=8)
-    parser.add_argument("--probe-batch-size", type=int, default=32)
+    parser.add_argument("--probe-timeout-seconds", type=float, default=0.75)
+    parser.add_argument("--probe-startup-timeout-seconds", type=float, default=1.0)
+    parser.add_argument("--probe-concurrency", type=int, default=32)
+    parser.add_argument("--probe-batch-size", type=int, default=256)
     parser.add_argument("--source-concurrency", type=int, default=32)
-    parser.add_argument("--analysis-workers", type=int, default=32)
+    parser.add_argument("--analysis-workers", type=int, default=120)
     parser.add_argument("--analysis-batch-size", type=int, default=1024)
     return parser
 

@@ -6,7 +6,6 @@ import json
 import socket
 import tempfile
 import time
-from contextlib import suppress
 from pathlib import Path
 
 import httpx
@@ -49,25 +48,6 @@ async def _wait_for_listener(
     raise TimeoutError("listener_timeout")
 
 
-async def _run_config_test(xray_path: Path, config_path: Path, timeout_seconds: float) -> bool:
-    process = await asyncio.create_subprocess_exec(
-        str(xray_path),
-        "run",
-        "-test",
-        "-c",
-        str(config_path),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    try:
-        return await asyncio.wait_for(process.wait(), timeout=timeout_seconds) == 0
-    except TimeoutError:
-        with suppress(ProcessLookupError):
-            process.kill()
-        await process.wait()
-        return False
-
-
 async def _request_public_ip(
     client: httpx.AsyncClient, url: str, timeout_seconds: float
 ) -> tuple[int | None, str | None]:
@@ -94,7 +74,7 @@ async def _stop_process(process: asyncio.subprocess.Process | None) -> None:
     except ProcessLookupError:
         return
     try:
-        await asyncio.wait_for(process.wait(), timeout=2)
+        await asyncio.wait_for(process.wait(), timeout=0.1)
     except TimeoutError:
         try:
             process.kill()
@@ -108,8 +88,8 @@ async def probe_profile(
     xray_path: Path,
     *,
     ip_echo_url: str = DEFAULT_IP_ECHO_URL,
-    timeout_seconds: float = 3.0,
-    startup_timeout_seconds: float = 5.0,
+    timeout_seconds: float = 0.75,
+    startup_timeout_seconds: float = 1.0,
 ) -> ProbeResult:
     """Validate one profile by requesting a public IP through a transient local Xray proxy."""
     if not xray_path.is_file():
@@ -127,9 +107,6 @@ async def probe_profile(
             temporary_path = Path(handle.name)
             temporary_path.chmod(0o600)
             json.dump(build_xray_config(profile, port, "profile"), handle, separators=(",", ":"))
-
-        if not await _run_config_test(xray_path, temporary_path, startup_timeout_seconds):
-            return ProbeResult(False, 0, None, "config_invalid")
 
         process = await asyncio.create_subprocess_exec(
             str(xray_path),

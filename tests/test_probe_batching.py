@@ -63,15 +63,15 @@ def test_validation_processes_one_async_batch_before_starting_the_next() -> None
     assert accepted_count == 4
 
 
-def test_command_defaults_limit_response_time_and_enable_high_parallelism() -> None:
-    """Catches CLI defaults that keep source loading or profile validation unnecessarily serial."""
+def test_command_defaults_enable_fail_fast_high_throughput_validation() -> None:
+    """Catches defaults that allow slow profile probes to throttle the collection run."""
 
     args = build_parser().parse_args(["--xray-path", "/tmp/xray"])
 
-    assert args.probe_timeout_seconds == 3.0
-    assert args.probe_startup_timeout_seconds == 5.0
+    assert args.probe_timeout_seconds == 0.75
+    assert args.probe_startup_timeout_seconds == 1.0
     assert args.source_concurrency == 32
-    assert args.analysis_workers == 32
+    assert args.analysis_workers == 120
     assert args.analysis_batch_size == 1024
-    assert args.probe_concurrency == 8
-    assert args.probe_batch_size == 32
+    assert args.probe_concurrency == 32
+    assert args.probe_batch_size == 256
