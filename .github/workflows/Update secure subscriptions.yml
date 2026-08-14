@@ -50,8 +50,12 @@ jobs:
             --output-dir output \
             --xray-path "$RUNNER_TEMP/xray-core/xray" \
             --source-concurrency 32 \
-            --analysis-workers 32 \
-            --analysis-batch-size 1024
+            --analysis-workers 120 \
+            --analysis-batch-size 1024 \
+            --probe-timeout-seconds 0.75 \
+            --probe-startup-timeout-seconds 1.0 \
+            --probe-concurrency 32 \
+            --probe-batch-size 256
       - name: Commit changed outputs
         run: |
           if git diff --quiet -- output report.json .collector/state.json; then
