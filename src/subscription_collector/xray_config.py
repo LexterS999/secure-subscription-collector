@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+from .models import Profile, Protocol
+
+
+def _required(value: str | None, field: str) -> str:
+    if not value:
+        raise ValueError(f"missing_{field}")
+    return value
+
+
+def _tls_settings(profile: Profile) -> dict[str, object]:
+    settings: dict[str, object] = {
+        "serverName": profile.params.get("sni", profile.server),
+        "allowInsecure": False,
+    }
+    if fingerprint := profile.params.get("fp"):
+        settings["fingerprint"] = fingerprint
+    return settings
+
+
+def _transport_settings(profile: Profile) -> dict[str, object]:
+    kind = profile.transport.lower()
+    if kind == "raw":
+        kind = "tcp"
+
+    stream: dict[str, object] = {"network": kind}
+    if profile.security == "reality":
+        stream["security"] = "reality"
+        stream["realitySettings"] = {
+            "serverName": profile.params.get("sni", profile.server),
+            "fingerprint": _required(profile.params.get("fp"), "fingerprint"),
+            "publicKey": _required(profile.params.get("pbk"), "reality_public_key"),
+            "shortId": profile.params.get("sid", ""),
+            "spiderX": profile.params.get("spx", ""),
+        }
+    else:
+        stream["security"] = "tls"
+        stream["tlsSettings"] = _tls_settings(profile)
+
+    if kind == "ws":
+        ws_settings: dict[str, object] = {"path": profile.params.get("path", "/")}
+        if host := profile.params.get("host"):
+            ws_settings["headers"] = {"Host": host}
+        stream["wsSettings"] = ws_settings
+    elif kind == "grpc":
+        stream["grpcSettings"] = {"serviceName": profile.params.get("servicename", "")}
+    elif kind == "h2":
+        stream["network"] = "xhttp"
+        stream["xhttpSettings"] = {
+            "host": profile.params.get("host", profile.server),
+            "path": profile.params.get("path", "/"),
+            "mode": "stream-one",
+        }
+    elif kind == "httpupgrade":
+        http_upgrade_settings: dict[str, object] = {"path": profile.params.get("path", "/")}
+        if host := profile.params.get("host"):
+            http_upgrade_settings["host"] = host
+        stream["httpupgradeSettings"] = http_upgrade_settings
+    elif kind == "xhttp":
+        stream["xhttpSettings"] = {"path": profile.params.get("path", "/")}
+    return stream
+
+
+def _vless_outbound(profile: Profile, tag: str) -> dict[str, object]:
+    user: dict[str, object] = {
+        "id": _required(profile.username, "uuid"),
+        "encryption": profile.params.get("encryption", "none"),
+    }
+    if flow := profile.params.get("flow"):
+        user["flow"] = flow
+    return {
+        "tag": tag,
+        "protocol": "vless",
+        "settings": {
+            "vnext": [
+                {
+                    "address": profile.server,
+                    "port": profile.port,
+                    "users": [user],
+                }
+            ]
+        },
+        "streamSettings": _transport_settings(profile),
+    }
+
+
+def _trojan_outbound(profile: Profile, tag: str) -> dict[str, object]:
+    return {
+        "tag": tag,
+        "protocol": "trojan",
+        "settings": {
+            "servers": [
+                {
+                    "address": profile.server,
+                    "port": profile.port,
+                    "password": _required(profile.secret, "password"),
+                }
+            ]
+        },
+        "streamSettings": _transport_settings(profile),
+    }
+
+
+def _hysteria2_outbound(profile: Profile, tag: str) -> dict[str, object]:
+    stream: dict[str, object] = {
+        "network": "hysteria",
+        "security": "tls",
+        "tlsSettings": _tls_settings(profile),
+        "hysteriaSettings": {"version": 2, "auth": _required(profile.secret, "password")},
+    }
+    if profile.params.get("obfs", "").lower() == "salamander":
+        stream["finalmask"] = {
+            "udp": [
+                {
+                    "type": "salamander",
+                    "settings": {
+                        "password": _required(
+                            profile.params.get("obfs-password"), "obfs_password"
+                        )
+                    },
+                }
+            ]
+        }
+    return {
+        "tag": tag,
+        "protocol": "hysteria",
+        "settings": {
+            "version": 2,
+            "address": profile.server,
+            "port": profile.port,
+        },
+        "streamSettings": stream,
+    }
+
+
+def build_xray_config(profile: Profile, socks_port: int, tag: str) -> dict[str, object]:
+    """Build a one-profile Xray configuration with a loopback-only SOCKS listener."""
+    if not 1 <= socks_port <= 65535:
+        raise ValueError("socks_port must be between 1 and 65535")
+    builders = {
+        Protocol.VLESS: _vless_outbound,
+        Protocol.TROJAN: _trojan_outbound,
+        Protocol.HYSTERIA2: _hysteria2_outbound,
+    }
+    try:
+        outbound = builders[profile.protocol](profile, tag)
+    except KeyError as exc:
+        raise ValueError("unsupported_protocol") from exc
+    return {
+        "log": {"loglevel": "warning"},
+        "inbounds": [
+            {
+                "listen": "127.0.0.1",
+                "port": socks_port,
+                "protocol": "socks",
+                "settings": {"auth": "noauth", "udp": False},
+                "tag": "probe-inbound",
+            }
+        ],
+        "outbounds": [outbound],
+        "routing": {
+            "rules": [
+                {
+                    "type": "field",
+                    "inboundTag": ["probe-inbound"],
+                    "outboundTag": tag,
+                }
+            ]
+        },
+    }

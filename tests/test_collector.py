@@ -8,11 +8,12 @@ from pathlib import Path
 import httpx
 import pytest
 
+from subscription_collector import cli
 from subscription_collector.cli import run_collection
 from subscription_collector.decoder import extract_candidate_lines
 from subscription_collector.fetcher import fetch_sources
 from subscription_collector.input_reader import InputError, read_input_urls
-from subscription_collector.models import Freshness
+from subscription_collector.models import Freshness, ProbeResult
 from subscription_collector.state import update_state
 from subscription_collector.writer import write_text_atomic
 
@@ -126,10 +127,15 @@ def test_atomic_writer_replaces_previous_contents(tmp_path: Path) -> None:
     assert output_path.read_text(encoding="utf-8") == "new\n"
 
 
-def test_collection_succeeds_without_proxy_binary_and_creates_protocol_outputs(
-    tmp_path: Path,
+def test_collection_publishes_profile_when_xray_validation_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Collects static-valid profiles without requiring a server-side proxy verifier."""
+    """Catches a validation stage that drops a profile despite a positive Xray IP result."""
+
+    async def validated(*_args, **_kwargs) -> ProbeResult:
+        return ProbeResult(True, 1, 8)
+
+    monkeypatch.setattr(cli, "probe_profile", validated, raising=False)
 
     async def exercise() -> int:
         input_path = tmp_path / "input.txt"
@@ -147,9 +153,37 @@ def test_collection_succeeds_without_proxy_binary_and_creates_protocol_outputs(
                 max_age_hours=72,
                 strict_first_seen=False,
                 fail_on_empty=False,
+                xray_path=tmp_path / "xray",
                 client=client,
             )
 
     assert asyncio.run(exercise()) == 0
     assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
-    assert (tmp_path / "output" / "trojan.txt").read_text(encoding="utf-8") == ""
+
+
+def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path) -> None:
+    """Catches publication or state mutation after a failed proxied IP response."""
+
+    async def exercise() -> int:
+        input_path = tmp_path / "input.txt"
+        input_path.write_text("https://source.example/list\n", encoding="utf-8")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=VLESS_SECURE)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_collection(
+                input_path=input_path,
+                output_dir=tmp_path / "output",
+                report_path=tmp_path / "report.json",
+                state_path=tmp_path / "state.json",
+                max_age_hours=72,
+                strict_first_seen=False,
+                fail_on_empty=False,
+                xray_path=tmp_path / "missing-xray",
+                client=client,
+            )
+
+    assert asyncio.run(exercise()) == 0
+    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8") == ""
+    assert (tmp_path / "state.json").read_text(encoding="utf-8") == "{}\n"

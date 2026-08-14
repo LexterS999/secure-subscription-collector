@@ -9,7 +9,6 @@ class Protocol(StrEnum):
     VLESS = "vless"
     TROJAN = "trojan"
     HYSTERIA2 = "hysteria2"
-    TUIC = "tuic"
 
 
 class Freshness(StrEnum):
@@ -60,6 +59,16 @@ class SeenRecord:
     last_seen_at: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeResult:
+    """Redacted outcome of a transient local proxy IP validation."""
+
+    passed: bool
+    successes: int
+    median_latency_ms: int | None
+    error_category: str | None = None
+
+
 @dataclass(slots=True)
 class RunStats:
     input_sources: int = 0
@@ -69,6 +78,8 @@ class RunStats:
     parsed_profiles: int = 0
     accepted_profiles: int = 0
     unique_profiles: int = 0
+    probed_profiles: int = 0
+    validated_profiles: int = 0
     timing_ms: dict[str, int] = field(default_factory=dict)
     emitted_profiles: int = 0
     published_new_by_protocol: dict[str, int] = field(default_factory=dict)

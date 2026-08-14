@@ -6,7 +6,9 @@ import logging
 
 import httpx
 
+from subscription_collector import cli
 from subscription_collector.cli import run_collection
+from subscription_collector.models import ProbeResult
 
 TROJAN_TLS = (
     "trojan://correct-horse@node.example.org:443"
@@ -14,8 +16,15 @@ TROJAN_TLS = (
 )
 
 
-def test_collection_logs_russian_progress_and_redacts_profile_data(tmp_path, caplog) -> None:
-    """Reports safe aggregate progress without invoking or logging an active profile verifier."""
+def test_collection_logs_russian_progress_and_redacts_profile_data(
+    tmp_path, caplog, monkeypatch
+) -> None:
+    """Reports safe aggregate progress and redacts data while Xray validation is active."""
+
+    async def validated(*_args, **_kwargs) -> ProbeResult:
+        return ProbeResult(True, 1, 8)
+
+    monkeypatch.setattr(cli, "probe_profile", validated)
 
     async def exercise() -> tuple[int, dict[str, object]]:
         input_path = tmp_path / "input.txt"
@@ -36,6 +45,7 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(tmp_path, cap
                 max_age_hours=72,
                 strict_first_seen=False,
                 fail_on_empty=False,
+                xray_path=tmp_path / "xray",
                 client=client,
             )
         return code, json.loads(report_path.read_text(encoding="utf-8"))
@@ -48,6 +58,7 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(tmp_path, cap
     assert "Этап «Загрузка источников»: начат" in messages
     assert "Этап «Статическая фильтрация»: завершён" in messages
     assert "Этап «Удаление повторов»: завершён" in messages
+    assert "Этап «Xray IP-проверка»: завершён" in messages
     assert "Этап «Публикация»: завершён" in messages
     assert "URL-проверка" not in messages
     assert "sing-box" not in messages
@@ -56,11 +67,13 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(tmp_path, cap
     assert "node.example.org" not in messages
     assert "second.example.org" not in messages
     assert report["publication"]["protocols"]["trojan"] == {"new": 2, "total": 2}
-    assert "validation" not in report
+    assert report["counts"]["probed_profiles"] == 2
+    assert report["counts"]["validated_profiles"] == 2
     assert set(report["timing_ms"]) >= {
         "sources_fetch",
         "static_filter",
         "deduplication",
+        "xray_ip_validation",
         "publication",
         "total",
     }
@@ -83,6 +96,7 @@ def test_collection_logs_input_error_in_russian_without_echoing_invalid_url(
             max_age_hours=72,
             strict_first_seen=False,
             fail_on_empty=False,
+            xray_path=tmp_path / "xray",
         )
 
     caplog.set_level(logging.INFO, logger="subscription_collector.cli")

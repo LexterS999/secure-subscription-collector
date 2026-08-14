@@ -5,6 +5,7 @@ import asyncio
 import httpx
 
 from subscription_collector import cli, dedup
+from subscription_collector.models import ProbeResult
 from subscription_collector.parser import parse_profile
 
 TROJAN_TLS = (
@@ -25,6 +26,11 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
         calls += 1
         return original_fingerprint(profile)
 
+    async def validated(*_args, **_kwargs) -> ProbeResult:
+        return ProbeResult(True, 1, 8)
+
+    monkeypatch.setattr(cli, "probe_profile", validated)
+
     async def exercise() -> tuple[int, str]:
         input_path = tmp_path / "input.txt"
         output_dir = tmp_path / "output"
@@ -44,6 +50,7 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
                 max_age_hours=72,
                 strict_first_seen=False,
                 fail_on_empty=False,
+                xray_path=tmp_path / "xray",
                 client=client,
             )
         return code, (output_dir / "trojan.txt").read_text(encoding="utf-8")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -19,6 +19,7 @@ from .models import Profile, RunStats
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
+from .probe import probe_profile
 from .report import build_report
 from .state import update_state
 from .writer import write_json_atomic
@@ -65,6 +66,40 @@ def _parse_and_filter_candidate(
     return decision.profile, True, None
 
 
+async def _validate_profiles(
+    profiles: Sequence[Profile],
+    *,
+    runner: Callable[[Profile], Awaitable[object]],
+    concurrency: int,
+    batch_size: int,
+    stats: RunStats,
+) -> list[Profile]:
+    """Run bounded Xray checks and return only profiles with a successful public-IP response."""
+    if concurrency < 1:
+        raise ValueError("probe_concurrency must be positive")
+    if batch_size < 1:
+        raise ValueError("probe_batch_size must be positive")
+
+    accepted: list[Profile] = []
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def validate_one(profile: Profile) -> tuple[Profile, object]:
+        async with semaphore:
+            return profile, await runner(profile)
+
+    for batch_start in range(0, len(profiles), batch_size):
+        batch = profiles[batch_start : batch_start + batch_size]
+        results = await asyncio.gather(*(validate_one(profile) for profile in batch))
+        for profile, result in results:
+            stats.probed_profiles += 1
+            if getattr(result, "passed", False):
+                accepted.append(profile)
+                stats.validated_profiles += 1
+            else:
+                stats.exclude(getattr(result, "error_category", None) or "ip_validation_failed")
+    return accepted
+
+
 async def run_collection(
     *,
     input_path: Path,
@@ -74,12 +109,17 @@ async def run_collection(
     max_age_hours: int,
     strict_first_seen: bool,
     fail_on_empty: bool,
+    xray_path: Path,
     source_concurrency: int = 32,
     analysis_workers: int = 32,
     analysis_batch_size: int = 1024,
+    probe_timeout_seconds: float = 3.0,
+    probe_startup_timeout_seconds: float = 5.0,
+    probe_concurrency: int = 8,
+    probe_batch_size: int = 32,
     client: httpx.AsyncClient | None = None,
 ) -> int:
-    """Collect, statically filter, deduplicate, and persist profiles without probing them."""
+    """Collect, statically filter, Xray-validate, and publish supported profiles."""
     started_at = datetime.now(UTC)
     monotonic_started_at = perf_counter()
     stats = RunStats()
@@ -91,6 +131,14 @@ async def run_collection(
         raise ValueError("analysis_workers must be positive")
     if analysis_batch_size < 1:
         raise ValueError("analysis_batch_size must be positive")
+    if probe_timeout_seconds <= 0:
+        raise ValueError("probe_timeout_seconds must be positive")
+    if probe_startup_timeout_seconds <= 0:
+        raise ValueError("probe_startup_timeout_seconds must be positive")
+    if probe_concurrency < 1:
+        raise ValueError("probe_concurrency must be positive")
+    if probe_batch_size < 1:
+        raise ValueError("probe_batch_size must be positive")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Этап «Подготовка»: начат — проверка списка источников.")
@@ -205,13 +253,44 @@ async def run_collection(
         len(accepted) - stats.unique_profiles,
     )
 
+    validation_started_at = perf_counter()
+    logger.info(
+        "Этап «Xray IP-проверка»: начат — профилей: %d, параллельность: %d, размер батча: %d.",
+        len(unique),
+        probe_concurrency,
+        probe_batch_size,
+    )
+
+    async def run_probe(profile: Profile):
+        return await probe_profile(
+            profile,
+            xray_path,
+            timeout_seconds=probe_timeout_seconds,
+            startup_timeout_seconds=probe_startup_timeout_seconds,
+        )
+
+    validated = await _validate_profiles(
+        unique,
+        runner=run_probe,
+        concurrency=probe_concurrency,
+        batch_size=probe_batch_size,
+        stats=stats,
+    )
+    validation_duration_ms = _stage_duration_ms(stats, "xray_ip_validation", validation_started_at)
+    logger.info(
+        "Этап «Xray IP-проверка»: завершён за %s — прошли: %d, исключены: %d.",
+        _duration_text(validation_duration_ms),
+        stats.validated_profiles,
+        len(unique) - stats.validated_profiles,
+    )
+
     publication_started_at = perf_counter()
     logger.info("Этап «Публикация»: начат.")
     fingerprints_by_profile_id = {
-        id(profile): profile_fingerprint(profile) for profile in unique
+        id(profile): profile_fingerprint(profile) for profile in validated
     }
     state = update_state(state_path, list(fingerprints_by_profile_id.values()), started_at)
-    profiles = list(unique)
+    profiles = list(validated)
     if strict_first_seen:
         profiles = [
             profile
@@ -263,7 +342,7 @@ async def run_collection(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Collect statically secure VLESS, Trojan, Hysteria2 and TUIC profiles"
+        description="Collect and Xray-validate secure VLESS, Trojan and Hysteria2 profiles"
     )
     parser.add_argument("--input", type=Path, default=Path("input.txt"))
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
@@ -272,6 +351,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-age-hours", type=int, default=72)
     parser.add_argument("--strict-first-seen", action="store_true")
     parser.add_argument("--fail-on-empty", action="store_true")
+    parser.add_argument("--xray-path", type=Path, required=True)
+    parser.add_argument("--probe-timeout-seconds", type=float, default=3.0)
+    parser.add_argument("--probe-startup-timeout-seconds", type=float, default=5.0)
+    parser.add_argument("--probe-concurrency", type=int, default=8)
+    parser.add_argument("--probe-batch-size", type=int, default=32)
     parser.add_argument("--source-concurrency", type=int, default=32)
     parser.add_argument("--analysis-workers", type=int, default=32)
     parser.add_argument("--analysis-batch-size", type=int, default=1024)
@@ -290,6 +374,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_age_hours=args.max_age_hours,
             strict_first_seen=args.strict_first_seen,
             fail_on_empty=args.fail_on_empty,
+            xray_path=args.xray_path,
+            probe_timeout_seconds=args.probe_timeout_seconds,
+            probe_startup_timeout_seconds=args.probe_startup_timeout_seconds,
+            probe_concurrency=args.probe_concurrency,
+            probe_batch_size=args.probe_batch_size,
             source_concurrency=args.source_concurrency,
             analysis_workers=args.analysis_workers,
             analysis_batch_size=args.analysis_batch_size,

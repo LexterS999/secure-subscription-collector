@@ -82,16 +82,6 @@ def _validate_hysteria2(profile: Profile) -> Decision:
     return Decision(None, reason) if (reason := _require_sni(profile)) else Decision(profile)
 
 
-def _validate_tuic(profile: Profile) -> Decision:
-    if profile.params.get("version", "5") != "5":
-        return Decision(None, "unsupported_tuic_version")
-    if not _valid_uuid(profile.username) or not profile.secret:
-        return Decision(None, "missing_required_secret")
-    if profile.security != "tls":
-        return Decision(None, "missing_security")
-    return Decision(None, reason) if (reason := _require_sni(profile)) else Decision(profile)
-
-
 def evaluate_strict_secure(profile: Profile) -> Decision:
     """Apply static Strict Secure requirements without contacting the profile endpoint."""
     if _has_insecure_flag(profile):
@@ -104,6 +94,4 @@ def evaluate_strict_secure(profile: Profile) -> Decision:
         return _validate_trojan(profile)
     if profile.protocol is Protocol.HYSTERIA2:
         return _validate_hysteria2(profile)
-    if profile.protocol is Protocol.TUIC:
-        return _validate_tuic(profile)
     return Decision(None, "unsupported_protocol")

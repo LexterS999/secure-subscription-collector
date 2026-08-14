@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from .models import RunStats, SourceResult
 
-_PROTOCOLS = ("vless", "trojan", "hysteria2", "tuic")
+_PROTOCOLS = ("vless", "trojan", "hysteria2")
 
 
 def build_report(
@@ -51,6 +51,8 @@ def build_report(
             "parsed_profiles": stats.parsed_profiles,
             "accepted_profiles": stats.accepted_profiles,
             "unique_profiles": stats.unique_profiles,
+            "probed_profiles": stats.probed_profiles,
+            "validated_profiles": stats.validated_profiles,
             "emitted_profiles": stats.emitted_profiles,
             "source_freshness": dict(sorted(stats.source_freshness.items())),
             "excluded": dict(sorted(stats.excluded.items())),

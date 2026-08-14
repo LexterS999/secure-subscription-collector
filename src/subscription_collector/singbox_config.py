@@ -76,28 +76,12 @@ def _build_hysteria2(profile: Profile, tag: str) -> dict[str, Any]:
     return outbound
 
 
-def _build_tuic(profile: Profile, tag: str) -> dict[str, Any]:
-    outbound = _base_outbound(profile, tag)
-    outbound.update(
-        {
-            "type": "tuic",
-            "uuid": profile.username,
-            "password": profile.secret,
-            "tls": _tls(profile),
-        }
-    )
-    if congestion := profile.params.get("congestion_control"):
-        outbound["congestion_control"] = congestion
-    return outbound
-
-
 def build_singbox_config(profile: Profile, socks_port: int, tag: str) -> dict[str, object]:
     """Build a one-profile, loopback-only sing-box configuration for a temporary URL test."""
     builders = {
         Protocol.VLESS: _build_vless,
         Protocol.TROJAN: _build_trojan,
         Protocol.HYSTERIA2: _build_hysteria2,
-        Protocol.TUIC: _build_tuic,
     }
     outbound = builders[profile.protocol](profile, tag)
     return {

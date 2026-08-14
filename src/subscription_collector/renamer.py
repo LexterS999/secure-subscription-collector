@@ -7,7 +7,6 @@ _PROTOCOL_LABELS = {
     Protocol.VLESS: "VL",
     Protocol.TROJAN: "TR",
     Protocol.HYSTERIA2: "HY2",
-    Protocol.TUIC: "TUIC",
 }
 _TRANSPORT_LABELS = {
     "raw": "TCP",
@@ -23,7 +22,7 @@ _TRANSPORT_LABELS = {
 
 
 def _display_transport(profile: Profile) -> str:
-    if profile.protocol in {Protocol.HYSTERIA2, Protocol.TUIC}:
+    if profile.protocol is Protocol.HYSTERIA2:
         return "UDP"
     return _TRANSPORT_LABELS.get(profile.transport.lower(), "TCP")
 

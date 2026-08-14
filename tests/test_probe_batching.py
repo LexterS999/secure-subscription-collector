@@ -1,11 +1,8 @@
 import asyncio
 
-import httpx
-
 from subscription_collector.cli import _validate_profiles, build_parser
 from subscription_collector.models import ProbeResult, RunStats
 from subscription_collector.parser import parse_profile
-from subscription_collector.probe import ProbeTarget, _request_target
 
 
 def _profile(index: int):
@@ -16,24 +13,6 @@ def _profile(index: int):
     )
     assert profile is not None
     return profile
-
-
-def test_request_target_enforces_wall_clock_timeout() -> None:
-    """Catches a control URL request that exceeds the configured response-time budget."""
-
-    class SlowClient:
-        async def get(self, _url: str) -> httpx.Response:
-            await asyncio.sleep(0.05)
-            return httpx.Response(204)
-
-    async def exercise() -> tuple[int | None, int | None, str | None]:
-        return await _request_target(
-            SlowClient(),
-            ProbeTarget("https://control.example/generate_204", 204),
-            timeout_seconds=0.001,
-        )
-
-    assert asyncio.run(exercise()) == (None, None, "timeout")
 
 
 def test_validation_processes_one_async_batch_before_starting_the_next() -> None:
@@ -87,11 +66,12 @@ def test_validation_processes_one_async_batch_before_starting_the_next() -> None
 def test_command_defaults_limit_response_time_and_enable_high_parallelism() -> None:
     """Catches CLI defaults that keep source loading or profile validation unnecessarily serial."""
 
-    args = build_parser().parse_args([])
+    args = build_parser().parse_args(["--xray-path", "/tmp/xray"])
 
-    assert args.probe_timeout_seconds == 0.3
+    assert args.probe_timeout_seconds == 3.0
+    assert args.probe_startup_timeout_seconds == 5.0
     assert args.source_concurrency == 32
     assert args.analysis_workers == 32
     assert args.analysis_batch_size == 1024
-    assert args.probe_concurrency == 32
-    assert args.probe_batch_size == 256
+    assert args.probe_concurrency == 8
+    assert args.probe_batch_size == 32

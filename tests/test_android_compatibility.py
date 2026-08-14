@@ -49,13 +49,9 @@ def test_hy2_alias_normalizes_to_hysteria2() -> None:
     assert evaluate_strict_secure(profile).profile == profile
 
 
-def test_policy_rejects_explicit_tuic_version_other_than_five() -> None:
-    """Catches acceptance of TUIC versions outside the approved v5 scope."""
-    profile = parse_profile(
-        TUIC_V5.replace("version=5", "version=4"), "https://source.example/list"
-    )
-    assert profile is not None
-    assert evaluate_strict_secure(profile).reason == "unsupported_tuic_version"
+def test_parser_rejects_tuic_after_protocol_removal() -> None:
+    """Catches accidental reintroduction of unsupported TUIC profiles."""
+    assert parse_profile(TUIC_V5, "https://source.example/list") is None
 
 
 @pytest.mark.parametrize(
@@ -64,7 +60,6 @@ def test_policy_rejects_explicit_tuic_version_other_than_five() -> None:
         (VLESS_REALITY, "VL", "REALITY", "GRPC"),
         (TROJAN_TLS, "TR", "TLS", "TCP"),
         (HY2_TLS, "HY2", "TLS", "UDP"),
-        (TUIC_V5, "TUIC", "TLS", "UDP"),
     ],
 )
 def test_renamer_emits_compact_ascii_android_fragment(

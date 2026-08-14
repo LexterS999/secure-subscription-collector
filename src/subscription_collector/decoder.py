@@ -4,7 +4,7 @@ import base64
 import binascii
 from urllib.parse import urlsplit
 
-SUPPORTED_SCHEMES = {"vless", "trojan", "hy2", "hysteria2", "tuic"}
+SUPPORTED_SCHEMES = {"vless", "trojan", "hy2", "hysteria2"}
 
 
 def _uri_lines(text: str) -> list[str]:

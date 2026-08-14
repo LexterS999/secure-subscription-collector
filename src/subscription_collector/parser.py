@@ -109,11 +109,7 @@ def _parse_trojan_like(uri: str, source_url: str, protocol: Protocol) -> Profile
     username = None
     secret = unquote(parsed.username or "")
     transport = params.get("type", "tcp")
-    if protocol is Protocol.TUIC:
-        username = _uuid(unquote(parsed.username or ""))
-        secret = unquote(parsed.password or "")
-        transport = "udp"
-    elif protocol is Protocol.HYSTERIA2:
+    if protocol is Protocol.HYSTERIA2:
         transport = "udp"
     return _profile(
         protocol=protocol,
