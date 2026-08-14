@@ -26,6 +26,18 @@ from .writer import write_json_atomic, write_text_atomic
 ProbeRunner = Callable[[Profile], Awaitable[ProbeResult]]
 logger = logging.getLogger(__name__)
 
+
+def configure_logging() -> None:
+    """Configure action-focused logs and suppress per-request transport noise."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
 _VALIDATION_ERROR_MESSAGES = {
     "binary_unavailable": "не найден файл программы проверки",
     "http_error": "ошибка HTTP-запроса",
@@ -64,50 +76,48 @@ async def _validate_profiles(
     *,
     runner: ProbeRunner,
     concurrency: int,
+    batch_size: int,
     stats: RunStats,
 ) -> list[Profile]:
-    """Validate profiles with a bounded worker pool and safe Russian progress logs."""
+    """Validate profiles in bounded asynchronous batches with safe Russian progress logs."""
     if not profiles:
         logger.info("Этап «URL-проверка»: пропущен — нет профилей для проверки.")
         return []
 
-    worker_count = min(concurrency, len(profiles))
+    worker_count = min(concurrency, batch_size, len(profiles))
     logger.info(
-        "Этап «URL-проверка»: начат — профилей: %d, одновременных проверок: %d.",
+        "Этап «URL-проверка»: начат — профилей: %d, размер батча: %d, "
+        "одновременных проверок: %d.",
         len(profiles),
+        batch_size,
         worker_count,
     )
-    work_queue: asyncio.Queue[tuple[int, Profile] | None] = asyncio.Queue()
-    result_queue: asyncio.Queue[tuple[int, Profile, ProbeResult]] = asyncio.Queue()
 
-    async def worker() -> None:
-        while True:
-            item = await work_queue.get()
-            try:
-                if item is None:
-                    return
-                index, profile = item
+    async def run_batch(
+        batch: list[tuple[int, Profile]],
+    ) -> list[tuple[int, Profile, ProbeResult]]:
+        semaphore = asyncio.Semaphore(worker_count)
+
+        async def run_one(index: int, profile: Profile) -> tuple[int, Profile, ProbeResult]:
+            async with semaphore:
                 try:
                     result = await runner(profile)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
                     result = ProbeResult(False, 0, None, "runner_error")
-                await result_queue.put((index, profile, result))
-            finally:
-                work_queue.task_done()
+            return index, profile, result
 
-    for index, profile in enumerate(profiles, start=1):
-        work_queue.put_nowait((index, profile))
-    workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
-    for _ in workers:
-        work_queue.put_nowait(None)
+        return list(await asyncio.gather(*(run_one(index, profile) for index, profile in batch)))
 
     accepted_by_index: dict[int, Profile] = {}
     progress_interval = max(1, len(profiles) // 20)
-    try:
-        for completed in range(1, len(profiles) + 1):
-            index, profile, result = await result_queue.get()
+    completed = 0
+    indexed_profiles = list(enumerate(profiles, start=1))
+    for batch_start in range(0, len(indexed_profiles), batch_size):
+        batch = indexed_profiles[batch_start : batch_start + batch_size]
+        for index, profile, result in await run_batch(batch):
+            completed += 1
             stats.validation_attempted += 1
             if result.passed:
                 stats.validation_passed += 1
@@ -132,9 +142,6 @@ async def _validate_profiles(
                     stats.validation_passed,
                     stats.validation_failed,
                 )
-    finally:
-        await work_queue.join()
-        await asyncio.gather(*workers)
 
     return [accepted_by_index[index] for index in sorted(accepted_by_index)]
 
@@ -151,8 +158,10 @@ async def run_collection(
     client: httpx.AsyncClient | None = None,
     sing_box_path: Path | None = None,
     verify_profiles: bool = True,
-    probe_timeout_seconds: float = 10.0,
-    probe_concurrency: int = 4,
+    probe_timeout_seconds: float = 0.3,
+    probe_startup_timeout_seconds: float = 3.0,
+    probe_concurrency: int = 8,
+    probe_batch_size: int = 32,
     probe_runner: ProbeRunner | None = None,
 ) -> int:
     """Collect, filter, URL-test and publish profiles without logging profile secrets."""
@@ -163,6 +172,12 @@ async def run_collection(
     logger.info("Конвейер сбора подписок: запуск.")
     if probe_concurrency < 1:
         raise ValueError("probe_concurrency must be positive")
+    if probe_batch_size < 1:
+        raise ValueError("probe_batch_size must be positive")
+    if probe_timeout_seconds <= 0:
+        raise ValueError("probe_timeout_seconds must be positive")
+    if probe_startup_timeout_seconds <= 0:
+        raise ValueError("probe_startup_timeout_seconds must be positive")
     if verify_profiles and probe_runner is None and sing_box_path is None:
         logger.error(
             "Этап «Подготовка»: ошибка — не указан путь к программе проверки профилей."
@@ -278,6 +293,7 @@ async def run_collection(
                     profile,
                     sing_box_path,
                     timeout_seconds=probe_timeout_seconds,
+                    startup_timeout_seconds=probe_startup_timeout_seconds,
                 )
 
         profile_validation_started_at = perf_counter()
@@ -285,6 +301,7 @@ async def run_collection(
             unique,
             runner=probe_runner,
             concurrency=probe_concurrency,
+            batch_size=probe_batch_size,
             stats=stats,
         )
         profile_validation_duration_ms = _stage_duration_ms(
@@ -371,17 +388,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fail-on-empty", action="store_true")
     parser.add_argument("--sing-box-path", type=Path)
     parser.add_argument("--no-verify-profiles", action="store_true")
-    parser.add_argument("--probe-timeout-seconds", type=float, default=10.0)
+    parser.add_argument(
+        "--probe-timeout-seconds",
+        type=float,
+        default=0.3,
+        help="maximum duration in seconds for one control URL response through a profile",
+    )
+    parser.add_argument(
+        "--probe-startup-timeout-seconds",
+        type=float,
+        default=3.0,
+        help="maximum duration in seconds for starting a temporary profile proxy",
+    )
     parser.add_argument("--probe-concurrency", type=int, default=8)
+    parser.add_argument("--probe-batch-size", type=int, default=32)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    configure_logging()
     args = build_parser().parse_args(argv)
     return asyncio.run(
         run_collection(
@@ -395,6 +420,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             sing_box_path=args.sing_box_path,
             verify_profiles=not args.no_verify_profiles,
             probe_timeout_seconds=args.probe_timeout_seconds,
+            probe_startup_timeout_seconds=args.probe_startup_timeout_seconds,
             probe_concurrency=args.probe_concurrency,
+            probe_batch_size=args.probe_batch_size,
         )
     )

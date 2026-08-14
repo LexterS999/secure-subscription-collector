@@ -73,11 +73,14 @@ async def _wait_for_listener(
 async def _request_target(
     client: httpx.AsyncClient,
     target: ProbeTarget,
+    *,
+    timeout_seconds: float,
 ) -> tuple[int | None, int | None, str | None]:
+    """Request one control URL without exceeding its wall-clock response budget."""
     started = time.monotonic()
     try:
-        response = await client.get(target.url)
-    except httpx.TimeoutException:
+        response = await asyncio.wait_for(client.get(target.url), timeout=timeout_seconds)
+    except (TimeoutError, httpx.TimeoutException):
         return None, None, "timeout"
     except httpx.HTTPError:
         return None, None, "http_error"
@@ -97,7 +100,8 @@ async def probe_profile(
     sing_box_path: Path,
     *,
     probe_targets: Sequence[ProbeTarget] = DEFAULT_PROBE_TARGETS,
-    timeout_seconds: float = 10.0,
+    timeout_seconds: float = 0.3,
+    startup_timeout_seconds: float = 3.0,
     required_successes: int = 2,
 ) -> ProbeResult:
     """Run exactly one temporary profile process and four concurrent redacted URL probes."""
@@ -107,6 +111,8 @@ async def probe_profile(
         return ProbeResult(False, 0, None, "binary_unavailable")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
+    if startup_timeout_seconds <= 0:
+        raise ValueError("startup_timeout_seconds must be positive")
 
     port = _reserve_loopback_port()
     process: asyncio.subprocess.Process | None = None
@@ -126,12 +132,15 @@ async def probe_profile(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        await _wait_for_listener(port, process, timeout_seconds)
+        await _wait_for_listener(port, process, startup_timeout_seconds)
         proxy_url = f"socks5://127.0.0.1:{port}"
         timeout = httpx.Timeout(timeout_seconds)
         async with httpx.AsyncClient(proxy=proxy_url, timeout=timeout, trust_env=False) as client:
             responses = await asyncio.gather(
-                *(_request_target(client, target) for target in probe_targets)
+                *(
+                    _request_target(client, target, timeout_seconds=timeout_seconds)
+                    for target in probe_targets
+                )
             )
         statuses = [item[0] for item in responses]
         latencies = [item[1] for item in responses if item[1] is not None]

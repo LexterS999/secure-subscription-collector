@@ -102,3 +102,22 @@ def test_collection_logs_input_error_in_russian_without_echoing_invalid_url(
     assert "разрешены только HTTPS-адреса без учётных данных" in messages
     assert "private.example" not in messages
     assert "secret-token" not in messages
+
+
+def test_configured_logging_keeps_pipeline_actions_and_suppresses_http_requests(caplog) -> None:
+    """Catches transport INFO records that drown out the collector's completed actions."""
+    from subscription_collector.cli import configure_logging
+
+    configure_logging()
+    caplog.set_level(logging.INFO)
+    logging.getLogger("httpx").info(
+        'HTTP Request: GET https://www.google.com/generate_204 "HTTP/1.1 204 No Content"'
+    )
+    logging.getLogger("httpcore").info("receive_response_headers.complete")
+    logging.getLogger("subscription_collector.cli").info("Этап «Публикация»: завершён.")
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+
+    assert "Этап «Публикация»: завершён." in messages
+    assert "HTTP Request:" not in messages
+    assert "receive_response_headers.complete" not in messages

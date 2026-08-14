@@ -230,7 +230,12 @@ def test_probe_handles_process_disappearing_during_cleanup(monkeypatch, tmp_path
         monkeypatch.setattr(probe.asyncio, "create_subprocess_exec", create_gone_process)
         profile = parse_profile(TROJAN_TLS, "https://source.example/list")
         assert profile is not None
-        return await probe.probe_profile(profile, binary, timeout_seconds=0.001)
+        return await probe.probe_profile(
+            profile,
+            binary,
+            timeout_seconds=0.001,
+            startup_timeout_seconds=0.001,
+        )
 
     result = asyncio.run(exercise())
     assert result.passed is False
