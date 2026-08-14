@@ -148,3 +148,12 @@ hysteria2://433def7c1a6e432e8a1ced81e966fe9e@64.188.64.204:443?fp=chrome&securit
 hysteria2://22j0d00lev7mq0yv@musicclips.videolinks.ru:8443?alpn=h3&fp=safari&obfs=salamander&obfs-password=8zzng75tz4tf82pj&security=tls&sni=musicclips.videolinks.ru#HY2-TLS-UDP-5oEyyw
 hysteria2://hysteria2_fastlane_7qg86w0sl:vYmdFPhDu5KRwexVllKMlGVFq5BHRU4C@2.27.28.103:1935?sni=de4.h.fastlanehosting.ru#HY2-TLS-UDP-9fc5S2
 hysteria2://Apt1923_N9x234gn_Nal5Nx3j_s@222.167.212.24:8443?sni=grape-power-pl.ddnsguru.com#HY2-TLS-UDP-9BnoKc
+hysteria2://hysteria2_fastlane_h43dvv57b:BFhT1zI613GtDOzp0kdvMdgJRMroi7mZ@2.27.28.106:1935?sni=de8.h.fastlanehosting.ru#HY2-TLS-UDP-u1Rp9z
+hysteria2://9cc2113e-6b5b-4ced-9c46-70cf78d2c599@dns.devmrzero.ir:2096?insecure=0&security=tls&sni=a26738d5774ad803.devmrzero.ir&obfs=salamander&obfs-password=AIbOe_791iQ4k6kPUgdsO7B9#HY2-TLS-UDP-wiWZJw
+hy2://CJtE4HLmxz859YMNiZM1NTuDRy7jjs8t@pg-usa2-hy2.gigatapbot.top:1443?sni=pg-usa2-hy2.gigatapbot.top#HY2-TLS-UDP-WW85Zh
+hysteria2://H7mP2xY9kJ4nQ8wR5tF6vB3z@13.124.150.77:443/?sni=vpn-kr-003.fastervpn.world#HY2-TLS-UDP-JAbgut
+hysteria2://austria_hysteria2_fastlane_rmmu8l31k:sY7bI7Vaev1mknnHsBPG7QeIGgy50P5Z@94.228.163.122:1935?sni=at4.h.fastlanehosting.ru#HY2-TLS-UDP-OXkpjw
+hysteria2://owefv0_92Z540k2F_nx83245_J9130oS_tY@5.180.27.221:8080?sni=borat-hopp.bumbleshrimp.com#HY2-TLS-UDP-ky5IAt
+hysteria2://544a7fdaa05a4dbe868288f8a9fb023c@assets.gateway-stream.com:52000?insecure=0&obfs=salamander&obfs-password=gu74jg3ym0e21zco&security=tls&sni=assets.gateway-stream.com#HY2-TLS-UDP-yktEWt
+hysteria2://CJtE4HLmxz859YMNiZM1NTuDRy7jjs8t@217.154.146.174:1443?sni=pg-de-hy2.gigatapbot.top#HY2-TLS-UDP-3C82fG
+hysteria2://owefv0_92Z540k2F_nx83245_J9130oS_tY@5.180.27.221:8443?sni=borat-hopp.bumbleshrimp.com#HY2-TLS-UDP-kKrCiQ

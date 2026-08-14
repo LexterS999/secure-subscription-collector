@@ -1,56 +1,56 @@
 {
   "counts": {
-    "accepted_profiles": 17727,
-    "candidate_lines": 42463,
-    "emitted_profiles": 9396,
+    "accepted_profiles": 17840,
+    "candidate_lines": 42487,
+    "emitted_profiles": 348,
     "excluded": {
-      "insecure_flag": 3229,
+      "insecure_flag": 3222,
       "invalid_or_unsupported": 6,
       "invalid_reality_key": 20,
-      "missing_fingerprint": 5178,
-      "missing_required_secret": 9684,
-      "missing_security": 5171,
-      "missing_sni": 1431,
+      "missing_fingerprint": 5207,
+      "missing_required_secret": 9446,
+      "missing_security": 5286,
+      "missing_sni": 1442,
       "response_too_large": 2,
-      "unsupported_transport": 17
+      "unsupported_transport": 18
     },
     "fetched_sources": 16,
     "input_sources": 18,
-    "parsed_profiles": 42457,
+    "parsed_profiles": 42481,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 15
     },
-    "unique_profiles": 9396
+    "unique_profiles": 9403
   },
-  "generated_at": "2026-08-14T13:27:09Z",
+  "generated_at": "2026-08-14T14:27:15Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 150,
-        "total": 150
+        "new": 9,
+        "total": 159
       },
       "trojan": {
-        "new": 1663,
-        "total": 1663
+        "new": 2,
+        "total": 1665
       },
       "tuic": {
         "new": 0,
         "total": 0
       },
       "vless": {
-        "new": 7583,
-        "total": 7583
+        "new": 337,
+        "total": 7920
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-14T09:59:49+00:00",
+      "last_modified": "2026-08-14T13:52:31+00:00",
       "reason": null
     },
     {
@@ -141,10 +141,10 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 199,
-    "publication": 680,
-    "sources_fetch": 1746,
-    "static_filter": 4058,
-    "total": 6683
+    "deduplication": 227,
+    "publication": 1491,
+    "sources_fetch": 958,
+    "static_filter": 4745,
+    "total": 7421
   }
 }
