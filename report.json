@@ -1,37 +1,43 @@
 {
   "counts": {
-    "accepted_profiles": 23713,
-    "candidate_lines": 58109,
-    "emitted_profiles": 10546,
+    "accepted_profiles": 21914,
+    "candidate_lines": 53476,
+    "emitted_profiles": 54,
     "excluded": {
-      "insecure_flag": 3983,
-      "invalid_or_unsupported": 171,
+      "insecure_flag": 3813,
+      "invalid_or_unsupported": 6,
       "invalid_reality_key": 21,
-      "legacy_cipher": 328,
-      "missing_fingerprint": 6406,
-      "missing_required_secret": 12639,
-      "missing_security": 8666,
-      "missing_sni": 2160,
+      "missing_fingerprint": 6507,
+      "missing_required_secret": 12238,
+      "missing_security": 7195,
+      "missing_sni": 1752,
       "response_too_large": 2,
-      "unsupported_transport": 22
+      "unsupported_transport": 30,
+      "validation:http_error": 601,
+      "validation:quorum": 6,
+      "validation:runner_error": 22,
+      "validation:timeout": 9374
     },
     "fetched_sources": 21,
     "input_sources": 23,
-    "parsed_profiles": 57938,
+    "parsed_profiles": 53470,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 20
     },
-    "unique_profiles": 10546
+    "unique_profiles": 10057,
+    "validation_attempted": 10057,
+    "validation_failed": 10003,
+    "validation_passed": 54
   },
-  "generated_at": "2026-08-14T10:08:35Z",
+  "generated_at": "2026-08-14T12:03:03Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-14T09:54:22+00:00",
+      "last_modified": "2026-08-14T11:02:48+00:00",
       "reason": null
     },
     {
@@ -145,5 +151,19 @@
       "reason": null
     }
   ],
-  "strict_first_seen": false
+  "strict_first_seen": false,
+  "timing_ms": {
+    "deduplication": 269,
+    "profile_validation": 1207831,
+    "publication": 73,
+    "sources_fetch": 876,
+    "static_filter": 4943,
+    "total": 1213994
+  },
+  "validation": {
+    "enabled": true,
+    "median_latency_ms": 1790,
+    "probe_urls_per_profile": 4,
+    "required_successes": 2
+  }
 }
