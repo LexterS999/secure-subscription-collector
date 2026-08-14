@@ -1,4 +1,4 @@
-name: Update secure subscriptions
+name: Update validated subscriptions
 
 'on':
   schedule:
@@ -12,6 +12,11 @@ concurrency:
   group: secure-subscription-update
   cancel-in-progress: false
 
+env:
+  SING_BOX_VERSION: '1.13.18'
+  SING_BOX_ASSET: 'sing-box-1.13.18-linux-amd64.tar.gz'
+  SING_BOX_SHA256: 'd34d987ed6ae39ca3760269264fb502b867e5477db45518c829b07776245c495'
+
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -22,8 +27,26 @@ jobs:
           python-version: '3.12'
       - name: Install runtime dependencies
         run: python -m pip install -r requirements.txt
-      - name: Collect and filter subscriptions
-        run: PYTHONPATH=src python -m subscription_collector --input input.txt
+      - name: Download verified sing-box
+        run: |
+          archive="${RUNNER_TEMP}/${SING_BOX_ASSET}"
+          curl --fail --location --silent --show-error \
+            "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/${SING_BOX_ASSET}" \
+            --output "$archive"
+          echo "${SING_BOX_SHA256}  ${archive}" | sha256sum --check --strict
+          extract_dir="${RUNNER_TEMP}/sing-box"
+          mkdir --parents "$extract_dir"
+          tar --extract --gzip --file "$archive" --directory "$extract_dir"
+          sing_box_path="$(find "$extract_dir" -type f -name sing-box -perm -u+x -print -quit)"
+          test -n "$sing_box_path"
+          echo "SING_BOX_PATH=$sing_box_path" >> "$GITHUB_ENV"
+      - name: Collect, validate and filter subscriptions
+        run: |
+          PYTHONPATH=src python -m subscription_collector \
+            --input input.txt \
+            --sing-box-path "$SING_BOX_PATH" \
+            --probe-timeout-seconds 10 \
+            --probe-concurrency 4
       - name: Commit changed outputs
         run: |
           if git diff --quiet -- output.txt report.json .collector/state.json; then
@@ -33,5 +56,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add output.txt report.json .collector/state.json
-          git commit -m "chore: update secure subscriptions [skip ci]"
+          git commit -m "chore: update validated subscriptions [skip ci]"
           git push
