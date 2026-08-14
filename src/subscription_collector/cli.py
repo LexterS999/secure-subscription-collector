@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
@@ -38,18 +39,6 @@ def configure_logging() -> None:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
-_VALIDATION_ERROR_MESSAGES = {
-    "binary_unavailable": "не найден файл программы проверки",
-    "http_error": "ошибка HTTP-запроса",
-    "listener_timeout": "истекло время запуска локального прокси",
-    "process_error": "не удалось запустить программу проверки",
-    "quorum": "не набран кворум ответов контрольных URL",
-    "runner_error": "внутренняя ошибка запуска проверки",
-    "timeout": "тайм-аут URL-проверки",
-    "unexpected_status": "контрольные URL вернули неожиданный статус",
-}
-
-
 def _within_first_seen_window(first_seen_at: str, now: datetime, hours: int) -> bool:
     parsed = datetime.fromisoformat(first_seen_at.replace("Z", "+00:00"))
     return parsed >= now.astimezone(UTC) - timedelta(hours=hours)
@@ -65,10 +54,17 @@ def _duration_text(duration_ms: int) -> str:
     return f"{duration_ms / 1000:.2f} с"
 
 
-def _validation_error_message(error_category: str | None) -> str:
-    return _VALIDATION_ERROR_MESSAGES.get(
-        error_category or "quorum", "контрольные URL не прошли проверку"
-    )
+def _parse_and_filter_candidate(
+    line: str, source_url: str
+) -> tuple[Profile | None, bool, str | None]:
+    """Apply CPU-bound URI parsing and the strict policy without mutating shared run statistics."""
+    profile = parse_profile(line, source_url)
+    if profile is None:
+        return None, False, "invalid_or_unsupported"
+    decision = evaluate_strict_secure(profile)
+    if decision.profile is None:
+        return None, True, decision.reason or "policy_rejected"
+    return decision.profile, True, None
 
 
 async def _validate_profiles(
@@ -128,12 +124,6 @@ async def _validate_profiles(
                 stats.validation_failed += 1
                 error_category = result.error_category or "quorum"
                 stats.exclude(f"validation:{error_category}")
-                logger.warning(
-                    "Этап «URL-проверка»: профиль №%d отклонён: %s (успешных ответов: %d из 4).",
-                    index,
-                    _validation_error_message(error_category),
-                    result.successes,
-                )
             if completed % progress_interval == 0 or completed == len(profiles):
                 logger.info(
                     "Этап «URL-проверка»: прогресс %d/%d — прошло: %d, отклонено: %d.",
@@ -155,6 +145,9 @@ async def run_collection(
     max_age_hours: int,
     strict_first_seen: bool,
     fail_on_empty: bool,
+    source_concurrency: int = 32,
+    analysis_workers: int = 32,
+    analysis_batch_size: int = 1024,
     client: httpx.AsyncClient | None = None,
     sing_box_path: Path | None = None,
     verify_profiles: bool = True,
@@ -170,6 +163,12 @@ async def run_collection(
     stats = RunStats()
     sources = []
     logger.info("Конвейер сбора подписок: запуск.")
+    if source_concurrency < 1:
+        raise ValueError("source_concurrency must be positive")
+    if analysis_workers < 1:
+        raise ValueError("analysis_workers must be positive")
+    if analysis_batch_size < 1:
+        raise ValueError("analysis_batch_size must be positive")
     if probe_concurrency < 1:
         raise ValueError("probe_concurrency must be positive")
     if probe_batch_size < 1:
@@ -222,9 +221,15 @@ async def run_collection(
     fetch_started_at = perf_counter()
     logger.info("Этап «Загрузка источников»: начат — адресов: %d.", len(urls))
     owns_client = client is None
-    active_client = client or default_client()
+    active_client = client or default_client(source_concurrency)
     try:
-        sources = await fetch_sources(urls, active_client, started_at, max_age_hours)
+        sources = await fetch_sources(
+            urls,
+            active_client,
+            started_at,
+            max_age_hours,
+            concurrency=source_concurrency,
+        )
     finally:
         if owns_client:
             await active_client.aclose()
@@ -238,30 +243,47 @@ async def run_collection(
     )
 
     static_filter_started_at = perf_counter()
-    logger.info("Этап «Статическая фильтрация»: начат.")
+    logger.info(
+        "Этап «Статическая фильтрация»: начат — потоков: %d, размер батча: %d.",
+        analysis_workers,
+        analysis_batch_size,
+    )
     accepted: list[Profile] = []
-    for source in sources:
-        stats.source_freshness[source.freshness.value] = (
-            stats.source_freshness.get(source.freshness.value, 0) + 1
-        )
-        if source.text is None:
-            stats.exclude(source.reason or source.freshness.value)
-            continue
-        stats.fetched_sources += 1
-        lines = extract_candidate_lines(source.text)
-        stats.candidate_lines += len(lines)
-        for line in lines:
-            profile = parse_profile(line, source.source_url)
-            if profile is None:
-                stats.exclude("invalid_or_unsupported")
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=analysis_workers) as executor:
+        for source in sources:
+            stats.source_freshness[source.freshness.value] = (
+                stats.source_freshness.get(source.freshness.value, 0) + 1
+            )
+            if source.text is None:
+                stats.exclude(source.reason or source.freshness.value)
                 continue
-            stats.parsed_profiles += 1
-            decision = evaluate_strict_secure(profile)
-            if decision.profile is None:
-                stats.exclude(decision.reason or "policy_rejected")
-                continue
-            accepted.append(decision.profile)
-            stats.accepted_profiles += 1
+            stats.fetched_sources += 1
+            lines = extract_candidate_lines(source.text)
+            stats.candidate_lines += len(lines)
+            for batch_start in range(0, len(lines), analysis_batch_size):
+                line_batch = lines[batch_start : batch_start + analysis_batch_size]
+                results = await asyncio.gather(
+                    *(
+                        loop.run_in_executor(
+                            executor,
+                            _parse_and_filter_candidate,
+                            line,
+                            source.source_url,
+                        )
+                        for line in line_batch
+                    )
+                )
+                for profile, parsed, reason in results:
+                    if not parsed:
+                        stats.exclude(reason or "invalid_or_unsupported")
+                        continue
+                    stats.parsed_profiles += 1
+                    if profile is None:
+                        stats.exclude(reason or "policy_rejected")
+                        continue
+                    accepted.append(profile)
+                    stats.accepted_profiles += 1
     static_filter_duration_ms = _stage_duration_ms(stats, "static_filter", static_filter_started_at)
     logger.info(
         "Этап «Статическая фильтрация»: завершён за %s — кандидатов: %d, "
@@ -388,6 +410,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fail-on-empty", action="store_true")
     parser.add_argument("--sing-box-path", type=Path)
     parser.add_argument("--no-verify-profiles", action="store_true")
+    parser.add_argument("--source-concurrency", type=int, default=32)
+    parser.add_argument("--analysis-workers", type=int, default=32)
+    parser.add_argument("--analysis-batch-size", type=int, default=1024)
     parser.add_argument(
         "--probe-timeout-seconds",
         type=float,
@@ -400,8 +425,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=3.0,
         help="maximum duration in seconds for starting a temporary profile proxy",
     )
-    parser.add_argument("--probe-concurrency", type=int, default=8)
-    parser.add_argument("--probe-batch-size", type=int, default=32)
+    parser.add_argument("--probe-concurrency", type=int, default=32)
+    parser.add_argument("--probe-batch-size", type=int, default=256)
     return parser
 
 
@@ -417,6 +442,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_age_hours=args.max_age_hours,
             strict_first_seen=args.strict_first_seen,
             fail_on_empty=args.fail_on_empty,
+            source_concurrency=args.source_concurrency,
+            analysis_workers=args.analysis_workers,
+            analysis_batch_size=args.analysis_batch_size,
             sing_box_path=args.sing_box_path,
             verify_profiles=not args.no_verify_profiles,
             probe_timeout_seconds=args.probe_timeout_seconds,

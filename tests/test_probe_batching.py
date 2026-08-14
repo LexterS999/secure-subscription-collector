@@ -84,10 +84,14 @@ def test_validation_processes_one_async_batch_before_starting_the_next() -> None
     assert accepted_count == 4
 
 
-def test_command_defaults_limit_profile_response_time_and_bound_batch_size() -> None:
-    """Catches CLI defaults that allow a slow profile response or unbounded validation batch."""
+def test_command_defaults_limit_response_time_and_enable_high_parallelism() -> None:
+    """Catches CLI defaults that keep source loading or profile validation unnecessarily serial."""
 
     args = build_parser().parse_args([])
 
     assert args.probe_timeout_seconds == 0.3
-    assert args.probe_batch_size == 32
+    assert args.source_concurrency == 32
+    assert args.analysis_workers == 32
+    assert args.analysis_batch_size == 1024
+    assert args.probe_concurrency == 32
+    assert args.probe_batch_size == 256

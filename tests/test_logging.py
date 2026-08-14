@@ -59,7 +59,8 @@ def test_collection_logs_russian_progress_error_and_redacts_profile_data(tmp_pat
     assert "Этап «Статическая фильтрация»: завершён" in messages
     assert "Этап «Удаление повторов»: завершён" in messages
     assert "Этап «URL-проверка»: прогресс 2/2" in messages
-    assert "отклонён: тайм-аут URL-проверки" in messages
+    assert "профиль №" not in messages
+    assert "тайм-аут URL-проверки" not in messages
     assert "Этап «Публикация»: завершён" in messages
     assert "correct-horse" not in messages
     assert "node.example.org" not in messages

@@ -11,6 +11,7 @@ from .models import Freshness, SourceResult
 
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 MAX_REDIRECTS = 3
+DEFAULT_SOURCE_CONCURRENCY = 32
 
 
 def _parse_last_modified(value: str | None) -> datetime | None:
@@ -100,11 +101,15 @@ async def fetch_sources(
     client: httpx.AsyncClient,
     now: datetime,
     max_age_hours: int = 72,
+    *,
+    concurrency: int = DEFAULT_SOURCE_CONCURRENCY,
 ) -> list[SourceResult]:
     """Fetch subscription documents without contacting addresses contained in them."""
     if max_age_hours < 1:
         raise ValueError("max_age_hours must be at least one")
-    semaphore = asyncio.Semaphore(8)
+    if concurrency < 1:
+        raise ValueError("concurrency must be positive")
+    semaphore = asyncio.Semaphore(concurrency)
     return list(
         await asyncio.gather(
             *(_fetch_one(url, client, now, max_age_hours, semaphore) for url in urls)
@@ -112,11 +117,16 @@ async def fetch_sources(
     )
 
 
-def default_client() -> httpx.AsyncClient:
-    """Create the only network client used by the collector: it fetches source documents."""
+def default_client(concurrency: int = DEFAULT_SOURCE_CONCURRENCY) -> httpx.AsyncClient:
+    """Create the network client for concurrent subscription-document loading."""
+    if concurrency < 1:
+        raise ValueError("concurrency must be positive")
     return httpx.AsyncClient(
         timeout=httpx.Timeout(20.0),
         follow_redirects=False,
-        limits=httpx.Limits(max_connections=8, max_keepalive_connections=8),
+        limits=httpx.Limits(
+            max_connections=concurrency,
+            max_keepalive_connections=concurrency,
+        ),
         headers={"User-Agent": "secure-subscription-collector/0.1"},
     )
