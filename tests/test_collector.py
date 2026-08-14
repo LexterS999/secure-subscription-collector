@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -120,31 +119,37 @@ def test_state_retains_prior_first_seen_records(tmp_path: Path) -> None:
 
 
 def test_atomic_writer_replaces_previous_contents(tmp_path: Path) -> None:
-    """Catches append semantics where collection requires full replacement of output.txt."""
-    output_path = tmp_path / "output.txt"
+    """Catches incomplete replacement in the low-level atomic text writer."""
+    output_path = tmp_path / "result.txt"
     output_path.write_text("old\n", encoding="utf-8")
     write_text_atomic(output_path, "new\n")
     assert output_path.read_text(encoding="utf-8") == "new\n"
 
 
-def test_cli_returns_redacted_error_when_validation_binary_is_missing(tmp_path: Path) -> None:
-    """Catches a scheduled run publishing output without its required validation binary."""
-    input_path = tmp_path / "input.txt"
-    input_path.write_text("https://source.example/list\n", encoding="utf-8")
-    report_path = tmp_path / "report.json"
-    code = asyncio.run(
-        run_collection(
-            input_path=input_path,
-            output_path=tmp_path / "output.txt",
-            report_path=report_path,
-            state_path=tmp_path / "state.json",
-            max_age_hours=72,
-            strict_first_seen=False,
-            fail_on_empty=False,
-        )
-    )
-    assert code == 3
-    assert (
-        json.loads(report_path.read_text(encoding="utf-8"))["error"]
-        == "validation_binary_unavailable"
-    )
+def test_collection_succeeds_without_proxy_binary_and_creates_protocol_outputs(
+    tmp_path: Path,
+) -> None:
+    """Collects static-valid profiles without requiring a server-side proxy verifier."""
+
+    async def exercise() -> int:
+        input_path = tmp_path / "input.txt"
+        input_path.write_text("https://source.example/list\n", encoding="utf-8")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=VLESS_SECURE)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_collection(
+                input_path=input_path,
+                output_dir=tmp_path / "output",
+                report_path=tmp_path / "report.json",
+                state_path=tmp_path / "state.json",
+                max_age_hours=72,
+                strict_first_seen=False,
+                fail_on_empty=False,
+                client=client,
+            )
+
+    assert asyncio.run(exercise()) == 0
+    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
+    assert (tmp_path / "output" / "trojan.txt").read_text(encoding="utf-8") == ""

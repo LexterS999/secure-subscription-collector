@@ -27,7 +27,7 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
 
     async def exercise() -> tuple[int, str]:
         input_path = tmp_path / "input.txt"
-        output_path = tmp_path / "output.txt"
+        output_dir = tmp_path / "output"
         report_path = tmp_path / "report.json"
         state_path = tmp_path / "state.json"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
@@ -38,16 +38,15 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             code = await cli.run_collection(
                 input_path=input_path,
-                output_path=output_path,
+                output_dir=output_dir,
                 report_path=report_path,
                 state_path=state_path,
                 max_age_hours=72,
                 strict_first_seen=False,
                 fail_on_empty=False,
                 client=client,
-                verify_profiles=False,
             )
-        return code, output_path.read_text(encoding="utf-8")
+        return code, (output_dir / "trojan.txt").read_text(encoding="utf-8")
 
     monkeypatch.setattr(cli, "profile_fingerprint", counted_fingerprint)
     code, output = asyncio.run(exercise())

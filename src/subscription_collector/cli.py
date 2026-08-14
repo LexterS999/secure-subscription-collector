@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,16 +15,14 @@ from .decoder import extract_candidate_lines
 from .dedup import deduplicate, profile_fingerprint
 from .fetcher import default_client, fetch_sources
 from .input_reader import InputError, read_input_urls
-from .models import ProbeResult, Profile, RunStats
+from .models import Profile, RunStats
+from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
-from .probe import probe_profile
-from .renamer import render_named_uri
 from .report import build_report
 from .state import update_state
-from .writer import write_json_atomic, write_text_atomic
+from .writer import write_json_atomic
 
-ProbeRunner = Callable[[Profile], Awaitable[ProbeResult]]
 logger = logging.getLogger(__name__)
 
 
@@ -57,7 +55,7 @@ def _duration_text(duration_ms: int) -> str:
 def _parse_and_filter_candidate(
     line: str, source_url: str
 ) -> tuple[Profile | None, bool, str | None]:
-    """Apply CPU-bound URI parsing and the strict policy without mutating shared run statistics."""
+    """Apply CPU-bound URI parsing and the strict policy without mutating shared statistics."""
     profile = parse_profile(line, source_url)
     if profile is None:
         return None, False, "invalid_or_unsupported"
@@ -67,79 +65,10 @@ def _parse_and_filter_candidate(
     return decision.profile, True, None
 
 
-async def _validate_profiles(
-    profiles: list[Profile],
-    *,
-    runner: ProbeRunner,
-    concurrency: int,
-    batch_size: int,
-    stats: RunStats,
-) -> list[Profile]:
-    """Validate profiles in bounded asynchronous batches with safe Russian progress logs."""
-    if not profiles:
-        logger.info("Этап «URL-проверка»: пропущен — нет профилей для проверки.")
-        return []
-
-    worker_count = min(concurrency, batch_size, len(profiles))
-    logger.info(
-        "Этап «URL-проверка»: начат — профилей: %d, размер батча: %d, "
-        "одновременных проверок: %d.",
-        len(profiles),
-        batch_size,
-        worker_count,
-    )
-
-    async def run_batch(
-        batch: list[tuple[int, Profile]],
-    ) -> list[tuple[int, Profile, ProbeResult]]:
-        semaphore = asyncio.Semaphore(worker_count)
-
-        async def run_one(index: int, profile: Profile) -> tuple[int, Profile, ProbeResult]:
-            async with semaphore:
-                try:
-                    result = await runner(profile)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    result = ProbeResult(False, 0, None, "runner_error")
-            return index, profile, result
-
-        return list(await asyncio.gather(*(run_one(index, profile) for index, profile in batch)))
-
-    accepted_by_index: dict[int, Profile] = {}
-    progress_interval = max(1, len(profiles) // 20)
-    completed = 0
-    indexed_profiles = list(enumerate(profiles, start=1))
-    for batch_start in range(0, len(indexed_profiles), batch_size):
-        batch = indexed_profiles[batch_start : batch_start + batch_size]
-        for index, profile, result in await run_batch(batch):
-            completed += 1
-            stats.validation_attempted += 1
-            if result.passed:
-                stats.validation_passed += 1
-                if result.median_latency_ms is not None:
-                    stats.validation_median_latencies_ms.append(result.median_latency_ms)
-                accepted_by_index[index] = profile
-            else:
-                stats.validation_failed += 1
-                error_category = result.error_category or "quorum"
-                stats.exclude(f"validation:{error_category}")
-            if completed % progress_interval == 0 or completed == len(profiles):
-                logger.info(
-                    "Этап «URL-проверка»: прогресс %d/%d — прошло: %d, отклонено: %d.",
-                    completed,
-                    len(profiles),
-                    stats.validation_passed,
-                    stats.validation_failed,
-                )
-
-    return [accepted_by_index[index] for index in sorted(accepted_by_index)]
-
-
 async def run_collection(
     *,
     input_path: Path,
-    output_path: Path,
+    output_dir: Path,
     report_path: Path,
     state_path: Path,
     max_age_hours: int,
@@ -149,15 +78,8 @@ async def run_collection(
     analysis_workers: int = 32,
     analysis_batch_size: int = 1024,
     client: httpx.AsyncClient | None = None,
-    sing_box_path: Path | None = None,
-    verify_profiles: bool = True,
-    probe_timeout_seconds: float = 0.3,
-    probe_startup_timeout_seconds: float = 3.0,
-    probe_concurrency: int = 8,
-    probe_batch_size: int = 32,
-    probe_runner: ProbeRunner | None = None,
 ) -> int:
-    """Collect, filter, URL-test and publish profiles without logging profile secrets."""
+    """Collect, statically filter, deduplicate, and persist profiles without probing them."""
     started_at = datetime.now(UTC)
     monotonic_started_at = perf_counter()
     stats = RunStats()
@@ -169,31 +91,8 @@ async def run_collection(
         raise ValueError("analysis_workers must be positive")
     if analysis_batch_size < 1:
         raise ValueError("analysis_batch_size must be positive")
-    if probe_concurrency < 1:
-        raise ValueError("probe_concurrency must be positive")
-    if probe_batch_size < 1:
-        raise ValueError("probe_batch_size must be positive")
-    if probe_timeout_seconds <= 0:
-        raise ValueError("probe_timeout_seconds must be positive")
-    if probe_startup_timeout_seconds <= 0:
-        raise ValueError("probe_startup_timeout_seconds must be positive")
-    if verify_profiles and probe_runner is None and sing_box_path is None:
-        logger.error(
-            "Этап «Подготовка»: ошибка — не указан путь к программе проверки профилей."
-        )
-        write_json_atomic(
-            report_path,
-            {
-                "generated_at": started_at.replace(microsecond=0)
-                .isoformat()
-                .replace("+00:00", "Z"),
-                "policy": "Strict Secure",
-                "error": "validation_binary_unavailable",
-                "counts": {"emitted_profiles": 0},
-            },
-        )
-        return 3
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Этап «Подготовка»: начат — проверка списка источников.")
     try:
         urls = read_input_urls(input_path)
@@ -202,7 +101,6 @@ async def run_collection(
             "Этап «Подготовка»: ошибка входного файла — разрешены только HTTPS-адреса "
             "без учётных данных; проверьте input.txt."
         )
-        write_text_atomic(output_path, "")
         write_json_atomic(
             report_path,
             {
@@ -236,7 +134,8 @@ async def run_collection(
     fetch_duration_ms = _stage_duration_ms(stats, "sources_fetch", fetch_started_at)
     usable_sources = sum(source.text is not None for source in sources)
     logger.info(
-        "Этап «Загрузка источников»: завершён за %s — пригодных источников: %d, исключённых: %d.",
+        "Этап «Загрузка источников»: завершён за %s — пригодных источников: %d, "
+        "исключённых: %d.",
         _duration_text(fetch_duration_ms),
         usable_sources,
         len(sources) - usable_sources,
@@ -306,39 +205,6 @@ async def run_collection(
         len(accepted) - stats.unique_profiles,
     )
 
-    if verify_profiles:
-        if probe_runner is None:
-            assert sing_box_path is not None
-
-            async def probe_runner(profile: Profile) -> ProbeResult:
-                return await probe_profile(
-                    profile,
-                    sing_box_path,
-                    timeout_seconds=probe_timeout_seconds,
-                    startup_timeout_seconds=probe_startup_timeout_seconds,
-                )
-
-        profile_validation_started_at = perf_counter()
-        unique = await _validate_profiles(
-            unique,
-            runner=probe_runner,
-            concurrency=probe_concurrency,
-            batch_size=probe_batch_size,
-            stats=stats,
-        )
-        profile_validation_duration_ms = _stage_duration_ms(
-            stats, "profile_validation", profile_validation_started_at
-        )
-        logger.info(
-            "Этап «URL-проверка»: завершён за %s — прошло: %d, отклонено: %d.",
-            _duration_text(profile_validation_duration_ms),
-            stats.validation_passed,
-            stats.validation_failed,
-        )
-    else:
-        stats.timing_ms["profile_validation"] = 0
-        logger.info("Этап «URL-проверка»: отключён параметром запуска.")
-
     publication_started_at = perf_counter()
     logger.info("Этап «Публикация»: начат.")
     fingerprints_by_profile_id = {
@@ -364,14 +230,13 @@ async def run_collection(
             fingerprints_by_profile_id[id(item)],
         )
     )
-    output_lines = [
-        render_named_uri(profile, fingerprints_by_profile_id[id(profile)]) for profile in profiles
-    ]
-    stats.emitted_profiles = len(output_lines)
-    _stage_duration_ms(stats, "publication", publication_started_at)
-    stats.timing_ms["total"] = round((perf_counter() - monotonic_started_at) * 1000)
     try:
-        write_text_atomic(output_path, "\n".join(output_lines) + ("\n" if output_lines else ""))
+        publication = publish_profiles(output_dir, profiles)
+        stats.emitted_profiles = publication.new_profiles
+        stats.published_new_by_protocol = publication.new_by_protocol
+        stats.published_total_by_protocol = publication.total_by_protocol
+        _stage_duration_ms(stats, "publication", publication_started_at)
+        stats.timing_ms["total"] = round((perf_counter() - monotonic_started_at) * 1000)
         write_json_atomic(
             report_path,
             build_report(
@@ -380,7 +245,6 @@ async def run_collection(
                 stats=stats,
                 max_age_hours=max_age_hours,
                 strict_first_seen=strict_first_seen,
-                verification_enabled=verify_profiles,
             ),
         )
     except OSError:
@@ -390,43 +254,27 @@ async def run_collection(
         )
         raise
     logger.info(
-        "Этап «Публикация»: завершён — опубликовано профилей: %d. Конвейер завершён за %s.",
-        stats.emitted_profiles,
+        "Этап «Публикация»: завершён — добавлено профилей: %d. Конвейер завершён за %s.",
+        publication.new_profiles,
         _duration_text(stats.timing_ms["total"]),
     )
-    return 2 if fail_on_empty and not output_lines else 0
+    return 2 if fail_on_empty and publication.new_profiles == 0 else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Collect validated VLESS, Trojan, Hysteria2 and TUIC profiles"
+        description="Collect statically secure VLESS, Trojan, Hysteria2 and TUIC profiles"
     )
     parser.add_argument("--input", type=Path, default=Path("input.txt"))
-    parser.add_argument("--output", type=Path, default=Path("output.txt"))
+    parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--report", type=Path, default=Path("report.json"))
     parser.add_argument("--state", type=Path, default=Path(".collector/state.json"))
     parser.add_argument("--max-age-hours", type=int, default=72)
     parser.add_argument("--strict-first-seen", action="store_true")
     parser.add_argument("--fail-on-empty", action="store_true")
-    parser.add_argument("--sing-box-path", type=Path)
-    parser.add_argument("--no-verify-profiles", action="store_true")
     parser.add_argument("--source-concurrency", type=int, default=32)
     parser.add_argument("--analysis-workers", type=int, default=32)
     parser.add_argument("--analysis-batch-size", type=int, default=1024)
-    parser.add_argument(
-        "--probe-timeout-seconds",
-        type=float,
-        default=0.3,
-        help="maximum duration in seconds for one control URL response through a profile",
-    )
-    parser.add_argument(
-        "--probe-startup-timeout-seconds",
-        type=float,
-        default=3.0,
-        help="maximum duration in seconds for starting a temporary profile proxy",
-    )
-    parser.add_argument("--probe-concurrency", type=int, default=32)
-    parser.add_argument("--probe-batch-size", type=int, default=256)
     return parser
 
 
@@ -436,7 +284,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return asyncio.run(
         run_collection(
             input_path=args.input,
-            output_path=args.output,
+            output_dir=args.output_dir,
             report_path=args.report,
             state_path=args.state,
             max_age_hours=args.max_age_hours,
@@ -445,11 +293,5 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_concurrency=args.source_concurrency,
             analysis_workers=args.analysis_workers,
             analysis_batch_size=args.analysis_batch_size,
-            sing_box_path=args.sing_box_path,
-            verify_profiles=not args.no_verify_profiles,
-            probe_timeout_seconds=args.probe_timeout_seconds,
-            probe_startup_timeout_seconds=args.probe_startup_timeout_seconds,
-            probe_concurrency=args.probe_concurrency,
-            probe_batch_size=args.probe_batch_size,
         )
     )
