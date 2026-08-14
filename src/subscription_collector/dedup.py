@@ -48,14 +48,10 @@ def deduplicate(profiles: Iterable[Profile]) -> list[Profile]:
     """Remove cosmetic duplicates without collapsing profiles with distinct connection settings."""
     result: list[Profile] = []
     seen_exact: set[str] = set()
-    compatibility_groups: dict[tuple[str, str, int, str], set[str]] = {}
     for profile in profiles:
         fingerprint = profile_fingerprint(profile)
-        compatibility_key = client_compatibility_key(profile)
-        group = compatibility_groups.setdefault(compatibility_key, set())
-        if fingerprint in group or fingerprint in seen_exact:
+        if fingerprint in seen_exact:
             continue
-        group.add(fingerprint)
         seen_exact.add(fingerprint)
         result.append(profile)
     return result

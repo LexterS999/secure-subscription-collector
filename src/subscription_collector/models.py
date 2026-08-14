@@ -81,6 +81,7 @@ class RunStats:
     validation_passed: int = 0
     validation_failed: int = 0
     validation_median_latencies_ms: list[int] = field(default_factory=list)
+    timing_ms: dict[str, int] = field(default_factory=dict)
     emitted_profiles: int = 0
     excluded: dict[str, int] = field(default_factory=dict)
 

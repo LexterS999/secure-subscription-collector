@@ -44,6 +44,7 @@ def build_report(
             ),
         },
         "sources": source_rows,
+        "timing_ms": dict(sorted(stats.timing_ms.items())),
         "counts": {
             "input_sources": stats.input_sources,
             "fetched_sources": stats.fetched_sources,
