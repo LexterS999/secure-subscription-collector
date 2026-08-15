@@ -14,6 +14,8 @@ TROJAN_TLS = (
     "?security=tls&sni=www.example.com&fp=chrome&type=tcp#source"
 )
 HY2_TLS = "hy2://hy2-password@hy2.example.org:443?security=tls&sni=www.example.com#source"
+
+
 def _profile(uri: str):
     profile = parse_profile(uri, "https://source.example/list")
     assert profile is not None

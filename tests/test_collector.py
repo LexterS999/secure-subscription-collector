@@ -132,13 +132,9 @@ def test_collection_publishes_profile_when_xray_validation_succeeds(
 ) -> None:
     """Catches a validation stage that drops a profile despite a positive Xray IP result."""
 
-    async def prechecked(*_args, **_kwargs) -> None:
-        return None
-
     async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
         return [ProbeResult(True, 1, 8) for _ in profiles]
 
-    monkeypatch.setattr(cli, "tcp_precheck", prechecked)
     monkeypatch.setattr(cli, "probe_batch", validated)
 
     async def exercise() -> int:

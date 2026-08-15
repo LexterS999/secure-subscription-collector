@@ -19,7 +19,7 @@ from .models import ProbeResult, Profile, RunStats
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
-from .probe import probe_batch, tcp_precheck
+from .probe import probe_batch
 from .report import build_report
 from .state import update_state
 from .writer import write_json_atomic
@@ -66,37 +66,6 @@ def _parse_and_filter_candidate(
     return decision.profile, True, None
 
 
-async def _filter_tcp_reachable_profiles(
-    profiles: Sequence[Profile],
-    *,
-    runner: Callable[[Profile], Awaitable[str | None]],
-    concurrency: int,
-    stats: RunStats,
-) -> list[Profile]:
-    """Exclude TCP-unreachable profiles before allocating an Xray batch; keep QUIC profiles."""
-    if concurrency < 1:
-        raise ValueError("tcp_precheck_concurrency must be positive")
-    semaphore = asyncio.Semaphore(concurrency)
-
-    async def check(profile: Profile) -> tuple[Profile, str | None]:
-        async with semaphore:
-            try:
-                return profile, await runner(profile)
-            except BaseException as exc:
-                if isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
-                    raise
-                return profile, "tcp_precheck_error"
-
-    outcomes = await asyncio.gather(*(check(profile) for profile in profiles))
-    kept: list[Profile] = []
-    for profile, category in outcomes:
-        if category is None:
-            kept.append(profile)
-        else:
-            stats.exclude(category)
-    return kept
-
-
 async def _validate_profiles(
     profiles: Sequence[Profile],
     *,
@@ -112,8 +81,7 @@ async def _validate_profiles(
         raise ValueError("probe_batch_size must be positive")
 
     batches = [
-        profiles[start : start + batch_size]
-        for start in range(0, len(profiles), batch_size)
+        profiles[start : start + batch_size] for start in range(0, len(profiles), batch_size)
     ]
     semaphore = asyncio.Semaphore(batch_concurrency)
 
@@ -156,16 +124,14 @@ async def run_collection(
     strict_first_seen: bool,
     fail_on_empty: bool,
     xray_path: Path,
-    source_concurrency: int = 32,
-    analysis_workers: int = 120,
+    source_concurrency: int = 48,
+    analysis_workers: int = 160,
     analysis_batch_size: int = 1024,
-    probe_timeout_seconds: float = 0.75,
-    probe_startup_timeout_seconds: float = 1.0,
-    probe_concurrency: int = 32,
-    probe_batch_size: int = 256,
-    probe_batch_concurrency: int = 2,
-    tcp_precheck_timeout_seconds: float = 0.35,
-    tcp_precheck_concurrency: int = 256,
+    probe_timeout_seconds: float = 0.5,
+    probe_startup_timeout_seconds: float = 0.75,
+    probe_concurrency: int = 128,
+    probe_batch_size: int = 512,
+    probe_batch_concurrency: int = 4,
     client: httpx.AsyncClient | None = None,
 ) -> int:
     """Collect, statically filter, Xray-validate, and publish supported profiles."""
@@ -190,10 +156,6 @@ async def run_collection(
         raise ValueError("probe_batch_size must be positive")
     if probe_batch_concurrency < 1:
         raise ValueError("probe_batch_concurrency must be positive")
-    if tcp_precheck_timeout_seconds <= 0:
-        raise ValueError("tcp_precheck_timeout_seconds must be positive")
-    if tcp_precheck_concurrency < 1:
-        raise ValueError("tcp_precheck_concurrency must be positive")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Этап «Подготовка»: начат — проверка списка источников.")
@@ -237,8 +199,7 @@ async def run_collection(
     fetch_duration_ms = _stage_duration_ms(stats, "sources_fetch", fetch_started_at)
     usable_sources = sum(source.text is not None for source in sources)
     logger.info(
-        "Этап «Загрузка источников»: завершён за %s — пригодных источников: %d, "
-        "исключённых: %d.",
+        "Этап «Загрузка источников»: завершён за %s — пригодных источников: %d, исключённых: %d.",
         _duration_text(fetch_duration_ms),
         usable_sources,
         len(sources) - usable_sources,
@@ -308,34 +269,10 @@ async def run_collection(
         len(accepted) - stats.unique_profiles,
     )
 
-    tcp_precheck_started_at = perf_counter()
-    logger.info(
-        "Этап «TCP-предфильтр»: начат — профилей: %d, параллельность: %d.",
-        len(unique),
-        tcp_precheck_concurrency,
-    )
-
-    async def run_tcp_precheck(profile: Profile) -> str | None:
-        return await tcp_precheck(profile, timeout_seconds=tcp_precheck_timeout_seconds)
-
-    prechecked = await _filter_tcp_reachable_profiles(
-        unique,
-        runner=run_tcp_precheck,
-        concurrency=tcp_precheck_concurrency,
-        stats=stats,
-    )
-    tcp_precheck_duration_ms = _stage_duration_ms(stats, "tcp_precheck", tcp_precheck_started_at)
-    logger.info(
-        "Этап «TCP-предфильтр»: завершён за %s — допущено: %d, исключено: %d.",
-        _duration_text(tcp_precheck_duration_ms),
-        len(prechecked),
-        len(unique) - len(prechecked),
-    )
-
     validation_started_at = perf_counter()
     logger.info(
         "Этап «Xray IP-проверка»: начат — профилей: %d, параллельность: %d, размер батча: %d.",
-        len(prechecked),
+        len(unique),
         probe_concurrency,
         probe_batch_size,
     )
@@ -350,7 +287,7 @@ async def run_collection(
         )
 
     validated = await _validate_profiles(
-        prechecked,
+        unique,
         batch_runner=run_probe_batch,
         batch_concurrency=probe_batch_concurrency,
         batch_size=probe_batch_size,
@@ -361,7 +298,7 @@ async def run_collection(
         "Этап «Xray IP-проверка»: завершён за %s — прошли: %d, исключены: %d.",
         _duration_text(validation_duration_ms),
         stats.validated_profiles,
-        len(prechecked) - stats.validated_profiles,
+        len(unique) - stats.validated_profiles,
     )
 
     publication_started_at = perf_counter()
@@ -432,15 +369,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--strict-first-seen", action="store_true")
     parser.add_argument("--fail-on-empty", action="store_true")
     parser.add_argument("--xray-path", type=Path, required=True)
-    parser.add_argument("--probe-timeout-seconds", type=float, default=0.75)
-    parser.add_argument("--probe-startup-timeout-seconds", type=float, default=1.0)
-    parser.add_argument("--probe-concurrency", type=int, default=32)
-    parser.add_argument("--probe-batch-size", type=int, default=256)
-    parser.add_argument("--probe-batch-concurrency", type=int, default=2)
-    parser.add_argument("--tcp-precheck-timeout-seconds", type=float, default=0.35)
-    parser.add_argument("--tcp-precheck-concurrency", type=int, default=256)
-    parser.add_argument("--source-concurrency", type=int, default=32)
-    parser.add_argument("--analysis-workers", type=int, default=120)
+    parser.add_argument("--probe-timeout-seconds", type=float, default=0.5)
+    parser.add_argument("--probe-startup-timeout-seconds", type=float, default=0.75)
+    parser.add_argument("--probe-concurrency", type=int, default=128)
+    parser.add_argument("--probe-batch-size", type=int, default=512)
+    parser.add_argument("--probe-batch-concurrency", type=int, default=4)
+    parser.add_argument("--source-concurrency", type=int, default=48)
+    parser.add_argument("--analysis-workers", type=int, default=160)
     parser.add_argument("--analysis-batch-size", type=int, default=1024)
     return parser
 
@@ -463,8 +398,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             probe_concurrency=args.probe_concurrency,
             probe_batch_size=args.probe_batch_size,
             probe_batch_concurrency=args.probe_batch_concurrency,
-            tcp_precheck_timeout_seconds=args.tcp_precheck_timeout_seconds,
-            tcp_precheck_concurrency=args.tcp_precheck_concurrency,
             source_concurrency=args.source_concurrency,
             analysis_workers=args.analysis_workers,
             analysis_batch_size=args.analysis_batch_size,

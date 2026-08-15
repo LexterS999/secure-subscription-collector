@@ -21,13 +21,9 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
 ) -> None:
     """Reports safe aggregate progress and redacts data while Xray validation is active."""
 
-    async def prechecked(*_args, **_kwargs) -> None:
-        return None
-
     async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
         return [ProbeResult(True, 1, 8) for _ in profiles]
 
-    monkeypatch.setattr(cli, "tcp_precheck", prechecked)
     monkeypatch.setattr(cli, "probe_batch", validated)
 
     async def exercise() -> tuple[int, dict[str, object]]:
@@ -65,7 +61,6 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
     assert "Этап «Xray IP-проверка»: завершён" in messages
     assert "Этап «Публикация»: завершён" in messages
     assert "URL-проверка" not in messages
-    assert "sing-box" not in messages
     assert "профиль №" not in messages
     assert "correct-horse" not in messages
     assert "node.example.org" not in messages

@@ -129,17 +129,11 @@ def test_build_xray_config_populates_hysteria2_auth_and_obfuscation() -> None:
             "allowInsecure": False,
         },
         "hysteriaSettings": {"version": 2, "auth": "hy2-password"},
-        "finalmask": {
-            "udp": [
-                {"type": "salamander", "settings": {"password": "obfs-secret"}}
-            ]
-        },
+        "finalmask": {"udp": [{"type": "salamander", "settings": {"password": "obfs-secret"}}]},
     }
 
 
-def test_generated_config_passes_official_xray_syntax_validation(
-    tmp_path, monkeypatch
-) -> None:
+def test_generated_config_passes_official_xray_syntax_validation(tmp_path, monkeypatch) -> None:
     """Catches a JSON shape that matches unit assertions but is rejected by Xray itself."""
     import json
     import os
@@ -305,6 +299,38 @@ def test_batch_config_passes_official_xray_syntax_validation(tmp_path) -> None:
     config_path = tmp_path / "batch.json"
     config_path.write_text(
         json.dumps(build_xray_batch_config(profiles, [31101, 31102])), encoding="utf-8"
+    )
+    config_path.chmod(0o600)
+
+    completed = subprocess.run(
+        [xray_path, "run", "-test", "-c", str(config_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_large_batch_config_passes_official_xray_syntax_validation(tmp_path) -> None:
+    """Catches a batch-size increase that creates a JSON Xray cannot parse."""
+    import json
+    import os
+    import subprocess
+
+    from subscription_collector.xray_config import build_xray_batch_config
+
+    xray_path = os.environ.get("XRAY_TEST_BINARY")
+    if not xray_path:
+        pytest.skip("XRAY_TEST_BINARY is not set")
+    profile = _profile(
+        "trojan://correct-horse@trojan.example.org:443"
+        "?security=tls&sni=www.example.com&fp=firefox&type=tcp"
+    )
+    config_path = tmp_path / "large-batch.json"
+    config_path.write_text(
+        json.dumps(build_xray_batch_config([profile] * 512, range(32000, 32512))),
+        encoding="utf-8",
     )
     config_path.chmod(0o600)
 

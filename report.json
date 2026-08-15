@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-08-14T00:00:00Z",
+  "policy": "Strict Secure + Xray IP validation",
+  "status": "reset_pending_next_validation_run",
+  "publication": {
+    "protocols": {
+      "vless": {"new": 0, "total": 0},
+      "trojan": {"new": 0, "total": 0},
+      "hysteria2": {"new": 0, "total": 0}
+    }
+  },
+  "counts": {
+    "input_sources": 0,
+    "fetched_sources": 0,
+    "candidate_lines": 0,
+    "parsed_profiles": 0,
+    "accepted_profiles": 0,
+    "unique_profiles": 0,
+    "probed_profiles": 0,
+    "validated_profiles": 0,
+    "emitted_profiles": 0,
+    "source_freshness": {},
+    "excluded": {}
+  },
+  "timing_ms": {}
+}

@@ -117,9 +117,7 @@ def _hysteria2_outbound(profile: Profile, tag: str) -> dict[str, object]:
                 {
                     "type": "salamander",
                     "settings": {
-                        "password": _required(
-                            profile.params.get("obfs-password"), "obfs_password"
-                        )
+                        "password": _required(profile.params.get("obfs-password"), "obfs_password")
                     },
                 }
             ]
@@ -172,9 +170,7 @@ def build_xray_batch_config(
             }
         )
         outbounds.append(outbound)
-        rules.append(
-            {"type": "field", "localPort": port, "outboundTag": outbound_tag}
-        )
+        rules.append({"type": "field", "localPort": port, "outboundTag": outbound_tag})
     return {
         "log": {"loglevel": "warning"},
         "inbounds": inbounds,

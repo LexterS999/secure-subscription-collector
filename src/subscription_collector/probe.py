@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-from .models import ProbeResult, Profile, Protocol
+from .models import ProbeResult, Profile
 from .xray_config import build_xray_batch_config
 
 DEFAULT_IP_ECHO_URL = "https://api.ipify.org"
@@ -53,21 +53,6 @@ def _exception_category(exc: BaseException) -> str:
     if isinstance(exc, (OSError, ValueError)):
         return "process_error"
     return "probe_error"
-
-
-async def tcp_precheck(profile: Profile, *, timeout_seconds: float) -> str | None:
-    """Return a fail-closed category for unreachable TCP profiles; skip QUIC-based Hysteria2."""
-    if profile.protocol is Protocol.HYSTERIA2:
-        return None
-    try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(profile.server, profile.port), timeout=timeout_seconds
-        )
-    except (TimeoutError, OSError):
-        return "tcp_unreachable"
-    writer.close()
-    await writer.wait_closed()
-    return None
 
 
 async def _wait_for_listener(
