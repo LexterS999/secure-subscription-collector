@@ -55,7 +55,10 @@ jobs:
             --probe-timeout-seconds 0.75 \
             --probe-startup-timeout-seconds 1.0 \
             --probe-concurrency 32 \
-            --probe-batch-size 256
+            --probe-batch-size 256 \
+            --probe-batch-concurrency 2 \
+            --tcp-precheck-timeout-seconds 0.35 \
+            --tcp-precheck-concurrency 256
       - name: Commit changed outputs
         run: |
           if git diff --quiet -- output report.json .collector/state.json; then
