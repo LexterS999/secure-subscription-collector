@@ -1,52 +1,57 @@
 {
   "counts": {
-    "accepted_profiles": 1145,
-    "candidate_lines": 55701,
-    "emitted_profiles": 0,
+    "accepted_profiles": 21677,
+    "candidate_lines": 53741,
+    "emitted_profiles": 2036,
     "excluded": {
-      "insecure_flag": 142,
-      "invalid_or_unsupported": 2,
-      "invalid_reality_key": 2,
-      "missing_fingerprint": 548,
-      "missing_required_secret": 315,
-      "missing_security": 522,
-      "missing_sni": 59,
+      "config_invalid": 1536,
+      "insecure_flag": 3321,
+      "invalid_or_unsupported": 6,
+      "invalid_reality_key": 21,
+      "missing_fingerprint": 6496,
+      "missing_required_secret": 12863,
+      "missing_security": 7539,
+      "missing_sni": 1784,
+      "no_endpoint_confirmation": 6226,
+      "probe_error": 6,
       "response_too_large": 2,
-      "unsupported_transport": 1
+      "unsupported_transport": 34
     },
     "fetched_sources": 21,
     "input_sources": 23,
-    "parsed_profiles": 2734,
+    "parsed_profiles": 53735,
+    "probed_profiles": 9804,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 20
     },
-    "unique_profiles": 604
+    "unique_profiles": 9804,
+    "validated_profiles": 2036
   },
-  "generated_at": "2026-08-15T13:32:53Z",
+  "generated_at": "2026-08-15T08:16:59Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 0,
-        "total": 0
+        "new": 59,
+        "total": 59
       },
       "trojan": {
-        "new": 0,
-        "total": 0
+        "new": 696,
+        "total": 696
       },
       "vless": {
-        "new": 0,
-        "total": 0
+        "new": 1281,
+        "total": 1281
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-15T13:32:53+00:00",
+      "last_modified": "2026-08-15T08:16:59+00:00",
       "reason": null
     },
     {
@@ -161,25 +166,12 @@
     }
   ],
   "strict_first_seen": false,
-  "telegram": {
-    "approved_channels": 0,
-    "candidate_channels": 262,
-    "discovered_channels": 262,
-    "excluded_channels": 0,
-    "policy_accepted_uri": 1145,
-    "posts_in_window": 1208,
-    "preview_failed": 0,
-    "supported_uri": 2734,
-    "unique_uri": 1117,
-    "uri_candidates": 2736
-  },
   "timing_ms": {
-    "channel_quality": 7,
-    "deduplication": 15,
-    "publication": 20,
-    "sources_fetch": 932,
-    "telegram_discovery": 1507,
-    "telegram_preview_fetch": 146969,
-    "total": 161121
+    "deduplication": 281,
+    "publication": 142,
+    "sources_fetch": 1598,
+    "static_filter": 6393,
+    "total": 642174,
+    "xray_ip_validation": 633758
   }
 }

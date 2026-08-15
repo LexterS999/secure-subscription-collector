@@ -48,17 +48,6 @@ class SourceResult:
 
 
 @dataclass(frozen=True, slots=True)
-class TelegramPost:
-    """A dated public Telegram preview post held only during the current run."""
-
-    handle: str
-    message_id: str
-    published_at: str
-    text: str
-    hrefs: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class Decision:
     profile: Profile | None
     reason: str | None = None
@@ -70,6 +59,16 @@ class SeenRecord:
     last_seen_at: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeResult:
+    """Redacted outcome of a transient local proxy IP validation."""
+
+    passed: bool
+    successes: int
+    median_latency_ms: int | None
+    error_category: str | None = None
+
+
 @dataclass(slots=True)
 class RunStats:
     input_sources: int = 0
@@ -79,20 +78,12 @@ class RunStats:
     parsed_profiles: int = 0
     accepted_profiles: int = 0
     unique_profiles: int = 0
+    probed_profiles: int = 0
+    validated_profiles: int = 0
     timing_ms: dict[str, int] = field(default_factory=dict)
     emitted_profiles: int = 0
     published_new_by_protocol: dict[str, int] = field(default_factory=dict)
     published_total_by_protocol: dict[str, int] = field(default_factory=dict)
-    telegram_discovered_channels: int = 0
-    telegram_candidate_channels: int = 0
-    telegram_approved_channels: int = 0
-    telegram_excluded_channels: int = 0
-    telegram_preview_failed: int = 0
-    telegram_posts_in_window: int = 0
-    telegram_uri_candidates: int = 0
-    telegram_supported_uri: int = 0
-    telegram_policy_accepted_uri: int = 0
-    telegram_unique_uri: int = 0
     excluded: dict[str, int] = field(default_factory=dict)
 
     def exclude(self, reason: str) -> None:

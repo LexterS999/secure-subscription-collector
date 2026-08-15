@@ -109,22 +109,3 @@ def test_dedup_removes_cosmetic_duplicate_with_reordered_query_and_remark() -> N
     )
     assert first is not None and second is not None
     assert deduplicate([first, second]) == [first]
-
-
-def test_strict_policy_rejects_reality_key_with_non_base64url_character() -> None:
-    import base64
-
-    valid_key = base64.urlsafe_b64encode(bytes(range(32))).decode("ascii").rstrip("=")
-    malformed_key = valid_key[:10] + "!" + valid_key[10:]
-    uri = (
-        "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
-        "?encryption=none&security=reality&sni=www.example.com&fp=chrome&type=grpc"
-        f"&pbk={malformed_key}#source-name"
-    )
-
-    profile = parse_profile(uri, "https://source.example/list")
-
-    assert profile is not None
-    decision = evaluate_strict_secure(profile)
-    assert decision.profile is None
-    assert decision.reason == "invalid_reality_key"

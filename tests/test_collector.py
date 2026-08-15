@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 
+from subscription_collector import cli
 from subscription_collector.cli import run_collection
 from subscription_collector.decoder import extract_candidate_lines
 from subscription_collector.fetcher import fetch_sources
 from subscription_collector.input_reader import InputError, read_input_urls
-from subscription_collector.models import Freshness
+from subscription_collector.models import Freshness, ProbeResult
 from subscription_collector.state import update_state
 from subscription_collector.writer import write_text_atomic
 
@@ -131,82 +131,49 @@ def test_atomic_writer_replaces_previous_contents(tmp_path: Path) -> None:
     assert output_path.read_text(encoding="utf-8") == "new\n"
 
 
-def test_collection_publishes_preview_profiles_without_network_probe(
-    tmp_path: Path, config_for
+def test_collection_publishes_profile_when_xray_validation_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_for
 ) -> None:
-    """A quality-approved channel publishes strict profiles without calling probe endpoints."""
-    seed = VLESS_SECURE.replace("#source", "#@quality_channel")
-    second = VLESS_SECURE.replace("edge.example.org", "second.example.org")
-    input_path = tmp_path / "input.txt"
-    input_path.write_text("https://source.example/list\n", encoding="utf-8")
-    published_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    preview = (
-        '<div class="tgme_widget_message" data-post="quality_channel/20">'
-        f'<div class="tgme_widget_message_text">{VLESS_SECURE}</div>'
-        f'<time datetime="{published_at}"></time></div>'
-        '<div class="tgme_widget_message" data-post="quality_channel/19">'
-        f'<div class="tgme_widget_message_text">{second}</div>'
-        f'<time datetime="{published_at}"></time></div>'
-    )
-    requested_hosts: list[str] = []
+    """Catches a validation stage that drops a profile despite a positive Xray IP result."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_hosts.append(request.url.host or "")
-        if request.url.host == "source.example":
-            return httpx.Response(200, text=seed)
-        if request.url.host == "t.me":
-            return httpx.Response(200, text=preview)
-        raise AssertionError(f"unexpected network request: {request.url}")
+    async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
+        return [ProbeResult(True, 1, 8) for _ in profiles]
 
-    async def exercise() -> tuple[int, int, str]:
-        config = config_for(input_path=input_path)
+    monkeypatch.setattr(cli, "probe_batch", validated)
+
+    async def exercise() -> int:
+        input_path = tmp_path / "input.txt"
+        input_path.write_text("https://source.example/list\n", encoding="utf-8")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=VLESS_SECURE)
+
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            first = await run_collection(config=config, client=client)
-            first_output = (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8")
-            second_run = await run_collection(config=config, client=client)
-        return first, second_run, first_output
+            return await run_collection(
+                config=config_for(input_path=input_path, xray_path=tmp_path / "xray"),
+                client=client,
+            )
 
-    first_code, second_code, first_output = asyncio.run(exercise())
-    output = (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8")
-    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
-
-    assert (first_code, second_code) == (0, 0)
-    assert first_output == ""
-    assert output.count("\n") == 2
-    assert set(requested_hosts) <= {"source.example", "t.me"}
-    assert "probed_profiles" not in report["counts"]
-    assert "validated_profiles" not in report["counts"]
+    assert asyncio.run(exercise()) == 0
+    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
 
 
-def test_collection_does_not_publish_policy_rejected_preview_profile(
-    tmp_path: Path, config_for
-) -> None:
-    """The removal of Xray must not weaken strict security policy filtering."""
-    seed = VLESS_SECURE.replace("#source", "#@quality_channel")
-    unsafe = VLESS_SECURE.replace("security=tls", "security=tls&allowInsecure=1")
-    unsafe_second = unsafe.replace(
-        "123e4567-e89b-12d3-a456-426614174000", "223e4567-e89b-12d3-a456-426614174000"
-    )
-    input_path = tmp_path / "input.txt"
-    input_path.write_text("https://source.example/list\n", encoding="utf-8")
-    published_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    preview = (
-        '<div class="tgme_widget_message" data-post="quality_channel/20">'
-        f'<div class="tgme_widget_message_text">{unsafe}</div>'
-        f'<time datetime="{published_at}"></time></div>'
-        '<div class="tgme_widget_message" data-post="quality_channel/19">'
-        f'<div class="tgme_widget_message_text">{unsafe_second}</div>'
-        f'<time datetime="{published_at}"></time></div>'
-    )
+def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path, config_for) -> None:
+    """Catches publication or state mutation after a failed proxied IP response."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=seed if request.url.host == "source.example" else preview)
+    async def exercise() -> int:
+        input_path = tmp_path / "input.txt"
+        input_path.write_text("https://source.example/list\n", encoding="utf-8")
 
-    async def exercise() -> None:
-        config = config_for(input_path=input_path)
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=VLESS_SECURE)
+
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            await run_collection(config=config, client=client)
-            await run_collection(config=config, client=client)
-        assert (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8") == ""
+            return await run_collection(
+                config=config_for(input_path=input_path, xray_path=tmp_path / "missing-xray"),
+                client=client,
+            )
 
-    asyncio.run(exercise())
+    assert asyncio.run(exercise()) == 0
+    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8") == ""
+    assert (tmp_path / "state.json").read_text(encoding="utf-8") == "{}\n"
