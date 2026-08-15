@@ -44,6 +44,18 @@ def build_report(
                 for protocol in _PROTOCOLS
             }
         },
+        "telegram": {
+            "discovered_channels": stats.telegram_discovered_channels,
+            "candidate_channels": stats.telegram_candidate_channels,
+            "approved_channels": stats.telegram_approved_channels,
+            "excluded_channels": stats.telegram_excluded_channels,
+            "preview_failed": stats.telegram_preview_failed,
+            "posts_in_window": stats.telegram_posts_in_window,
+            "uri_candidates": stats.telegram_uri_candidates,
+            "supported_uri": stats.telegram_supported_uri,
+            "policy_accepted_uri": stats.telegram_policy_accepted_uri,
+            "unique_uri": stats.telegram_unique_uri,
+        },
         "counts": {
             "input_sources": stats.input_sources,
             "fetched_sources": stats.fetched_sources,

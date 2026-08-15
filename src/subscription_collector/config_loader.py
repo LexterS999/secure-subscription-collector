@@ -54,6 +54,27 @@ class SourcesConfig:
 
 
 @dataclass(frozen=True)
+class TelegramConfig:
+    registry_path: Path
+    state_path: Path
+    max_post_age_hours: int
+    concurrency: int
+    timeout_seconds: float
+    max_response_bytes: int
+    max_redirects: int
+    max_pages_per_channel: int
+    sample_post_limit: int
+
+
+@dataclass(frozen=True)
+class ChannelQualityConfig:
+    approval_score: float
+    min_evidence_runs: int
+    min_supported_candidates: int
+    min_fresh_posts: int
+
+
+@dataclass(frozen=True)
 class StaticFilterConfig:
     workers: int
     batch_size: int
@@ -91,6 +112,8 @@ class XrayConfig:
 class CollectorConfig:
     paths: PathsConfig
     sources: SourcesConfig
+    telegram: TelegramConfig
+    channel_quality: ChannelQualityConfig
     static_filter: StaticFilterConfig
     ip_validation: IpValidationConfig
     behavior: BehaviorConfig
@@ -212,6 +235,64 @@ def _sources_config(payload: dict[str, Any]) -> SourcesConfig:
     )
 
 
+def _telegram_config(payload: dict[str, Any]) -> TelegramConfig:
+    section = _mapping(payload["telegram"], "telegram")
+    _check_keys(
+        section,
+        "telegram",
+        {
+            "registry",
+            "state",
+            "max_post_age_hours",
+            "concurrency",
+            "timeout_seconds",
+            "max_response_bytes",
+            "max_redirects",
+            "max_pages_per_channel",
+            "sample_post_limit",
+        },
+    )
+    max_post_age_hours = _integer(section, "max_post_age_hours", "telegram", 1)
+    if max_post_age_hours > 72:
+        raise ConfigError("telegram.max_post_age_hours должен быть не больше 72")
+    return TelegramConfig(
+        registry_path=Path(_string(section, "registry", "telegram")),
+        state_path=Path(_string(section, "state", "telegram")),
+        max_post_age_hours=max_post_age_hours,
+        concurrency=_integer(section, "concurrency", "telegram", 1),
+        timeout_seconds=_number(section, "timeout_seconds", "telegram", 0.000001),
+        max_response_bytes=_integer(section, "max_response_bytes", "telegram", 1),
+        max_redirects=_integer(section, "max_redirects", "telegram", 0),
+        max_pages_per_channel=_integer(section, "max_pages_per_channel", "telegram", 1),
+        sample_post_limit=_integer(section, "sample_post_limit", "telegram", 1),
+    )
+
+
+def _channel_quality_config(payload: dict[str, Any]) -> ChannelQualityConfig:
+    section = _mapping(payload["channel_quality"], "channel_quality")
+    _check_keys(
+        section,
+        "channel_quality",
+        {
+            "approval_score",
+            "min_evidence_runs",
+            "min_supported_candidates",
+            "min_fresh_posts",
+        },
+    )
+    approval_score = _number(section, "approval_score", "channel_quality", 0)
+    if approval_score > 100:
+        raise ConfigError("channel_quality.approval_score должен быть не больше 100")
+    return ChannelQualityConfig(
+        approval_score=approval_score,
+        min_evidence_runs=_integer(section, "min_evidence_runs", "channel_quality", 1),
+        min_supported_candidates=_integer(
+            section, "min_supported_candidates", "channel_quality", 1
+        ),
+        min_fresh_posts=_integer(section, "min_fresh_posts", "channel_quality", 1),
+    )
+
+
 def _static_filter_config(payload: dict[str, Any]) -> StaticFilterConfig:
     section = _mapping(payload["static_filter"], "static_filter")
     _check_keys(section, "static_filter", {"workers", "batch_size"})
@@ -304,6 +385,23 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "max_redirects": config.sources.max_redirects,
             "user_agent": config.sources.user_agent,
         },
+        "telegram": {
+            "registry": str(config.telegram.registry_path),
+            "state": str(config.telegram.state_path),
+            "max_post_age_hours": config.telegram.max_post_age_hours,
+            "concurrency": config.telegram.concurrency,
+            "timeout_seconds": config.telegram.timeout_seconds,
+            "max_response_bytes": config.telegram.max_response_bytes,
+            "max_redirects": config.telegram.max_redirects,
+            "max_pages_per_channel": config.telegram.max_pages_per_channel,
+            "sample_post_limit": config.telegram.sample_post_limit,
+        },
+        "channel_quality": {
+            "approval_score": config.channel_quality.approval_score,
+            "min_evidence_runs": config.channel_quality.min_evidence_runs,
+            "min_supported_candidates": config.channel_quality.min_supported_candidates,
+            "min_fresh_posts": config.channel_quality.min_fresh_posts,
+        },
         "static_filter": {
             "workers": config.static_filter.workers,
             "batch_size": config.static_filter.batch_size,
@@ -335,6 +433,8 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
     }
     _paths_config(payload)
     _sources_config(payload)
+    _telegram_config(payload)
+    _channel_quality_config(payload)
     _static_filter_config(payload)
     _ip_validation_config(payload)
     _behavior_config(payload)
@@ -354,12 +454,23 @@ def load_config(path: Path) -> CollectorConfig:
     _check_keys(
         root,
         "Корень config.yaml",
-        {"paths", "sources", "static_filter", "ip_validation", "behavior", "xray"},
+        {
+            "paths",
+            "sources",
+            "telegram",
+            "channel_quality",
+            "static_filter",
+            "ip_validation",
+            "behavior",
+            "xray",
+        },
     )
     return validate_config(
         CollectorConfig(
             paths=_paths_config(root),
             sources=_sources_config(root),
+            telegram=_telegram_config(root),
+            channel_quality=_channel_quality_config(root),
             static_filter=_static_filter_config(root),
             ip_validation=_ip_validation_config(root),
             behavior=_behavior_config(root),

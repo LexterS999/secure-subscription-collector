@@ -22,6 +22,21 @@ sources:
   max_response_bytes: 1048576
   max_redirects: 2
   user_agent: collector-test/1.0
+telegram:
+  registry: tg_channels
+  state: .collector/channel_state.json
+  max_post_age_hours: 72
+  concurrency: 4
+  timeout_seconds: 15.0
+  max_response_bytes: 2097152
+  max_redirects: 2
+  max_pages_per_channel: 8
+  sample_post_limit: 25
+channel_quality:
+  approval_score: 55.0
+  min_evidence_runs: 2
+  min_supported_candidates: 2
+  min_fresh_posts: 2
 static_filter:
   workers: 6
   batch_size: 128
@@ -122,4 +137,31 @@ def test_load_config_rejects_duplicate_yaml_keys(tmp_path: Path) -> None:
     _write_config(config_path, "\nsources:\n  concurrency: 1\n")
 
     with pytest.raises(ConfigError, match="повторяющийся ключ"):
+        load_config(config_path)
+
+
+def test_load_config_reads_telegram_and_channel_quality_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+
+    config = load_config(config_path)
+
+    assert config.telegram.registry_path == Path("tg_channels")
+    assert config.telegram.max_post_age_hours == 72
+    assert config.telegram.max_pages_per_channel == 8
+    assert config.channel_quality.approval_score == 55.0
+    assert config.channel_quality.min_evidence_runs == 2
+
+
+def test_load_config_rejects_telegram_window_larger_than_72_hours(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "max_post_age_hours: 72", "max_post_age_hours: 73"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="telegram.max_post_age_hours"):
         load_config(config_path)

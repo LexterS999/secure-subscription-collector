@@ -31,6 +31,11 @@ def config_for(tmp_path: Path):
                 state_path=state_path or tmp_path / "state.json",
                 xray_path=xray_path or tmp_path / "xray",
             ),
+            telegram=replace(
+                config.telegram,
+                registry_path=tmp_path / "tg_channels",
+                state_path=tmp_path / "channel_state.json",
+            ),
         )
 
     return build

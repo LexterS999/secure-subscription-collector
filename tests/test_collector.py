@@ -131,31 +131,44 @@ def test_atomic_writer_replaces_previous_contents(tmp_path: Path) -> None:
     assert output_path.read_text(encoding="utf-8") == "new\n"
 
 
-def test_collection_publishes_profile_when_xray_validation_succeeds(
+def test_collection_publishes_preview_profile_when_xray_validation_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_for
 ) -> None:
-    """Catches a validation stage that drops a profile despite a positive Xray IP result."""
+    """Catches a Telegram-gated validation stage that drops Xray-confirmed preview profiles."""
 
     async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
         return [ProbeResult(True, 1, 8) for _ in profiles]
 
     monkeypatch.setattr(cli, "probe_batch", validated)
+    seed = VLESS_SECURE.replace("#source", "#@quality_channel")
+    second = VLESS_SECURE.replace("edge.example.org", "second.example.org")
 
     async def exercise() -> int:
         input_path = tmp_path / "input.txt"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
+        published_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        preview = (
+            '<div class="tgme_widget_message" data-post="quality_channel/20">'
+            f'<div class="tgme_widget_message_text">{VLESS_SECURE}\n{second}</div>'
+            f'<time datetime="{published_at}"></time></div>'
+        )
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text=VLESS_SECURE)
+            text = seed if request.url.host == "source.example" else preview
+            return httpx.Response(200, text=text)
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await run_collection(
+                config=config_for(input_path=input_path, xray_path=tmp_path / "xray"),
+                client=client,
+            )
             return await run_collection(
                 config=config_for(input_path=input_path, xray_path=tmp_path / "xray"),
                 client=client,
             )
 
     assert asyncio.run(exercise()) == 0
-    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
+    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 2
 
 
 def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path, config_for) -> None:

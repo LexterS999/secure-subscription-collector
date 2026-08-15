@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,10 +11,22 @@ from time import perf_counter
 
 import httpx
 
+from .channel_quality import ChannelMetrics, evaluate_channel
+from .channel_state import (
+    channel_state_key,
+    load_channel_state,
+    update_channel_state,
+    write_channel_registry,
+)
 from .config_loader import CollectorConfig, ConfigError, load_config, validate_config
 from .decoder import extract_candidate_lines
 from .dedup import deduplicate, profile_fingerprint
-from .fetcher import default_client, fetch_sources
+from .fetcher import (
+    default_client,
+    fetch_sources,
+    fetch_telegram_preview_page,
+    fetch_telegram_previews,
+)
 from .input_reader import InputError, read_input_urls
 from .models import ProbeResult, Profile, RunStats
 from .output_store import publish_profiles
@@ -24,6 +35,7 @@ from .policy import evaluate_strict_secure
 from .probe import probe_batch
 from .report import build_report
 from .state import update_state
+from .telegram import extract_profile_uris, extract_telegram_handles, parse_preview_posts
 from .writer import write_json_atomic
 
 logger = logging.getLogger(__name__)
@@ -58,7 +70,7 @@ def _duration_text(duration_ms: int) -> str:
 def _parse_and_filter_candidate(
     line: str, source_url: str
 ) -> tuple[Profile | None, bool, str | None]:
-    """Apply CPU-bound URI parsing and the strict policy without mutating shared statistics."""
+    """Apply URI parsing and strict policy without mutating shared statistics."""
     profile = parse_profile(line, source_url)
     if profile is None:
         return None, False, "invalid_or_unsupported"
@@ -116,23 +128,48 @@ async def _validate_profiles(
     return accepted
 
 
+def _parse_channel_profiles(
+    raw_uris: Sequence[str],
+    source_url: str,
+    stats: RunStats,
+) -> tuple[list[Profile], int, int]:
+    """Apply existing URI parser and policy to one channel without retaining raw URI externally."""
+    static_profiles: list[Profile] = []
+    supported_candidates = 0
+    static_accepted = 0
+    for raw_uri in raw_uris:
+        stats.candidate_lines += 1
+        profile, parsed, reason = _parse_and_filter_candidate(raw_uri, source_url)
+        if not parsed:
+            stats.exclude(reason or "invalid_or_unsupported")
+            continue
+        supported_candidates += 1
+        stats.parsed_profiles += 1
+        if profile is None:
+            stats.exclude(reason or "policy_rejected")
+            continue
+        static_profiles.append(profile)
+        static_accepted += 1
+        stats.accepted_profiles += 1
+    return deduplicate(static_profiles), supported_candidates, static_accepted
+
+
 async def run_collection(
     *, config: CollectorConfig, client: httpx.AsyncClient | None = None
 ) -> int:
-    """Collect, statically filter, Xray-validate, and publish supported profiles."""
+    """Discover public channels from seeds and publish only quality-gated Xray profiles."""
     started_at = datetime.now(UTC)
     monotonic_started_at = perf_counter()
     stats = RunStats()
-    sources = []
     paths = config.paths
     source_settings = config.sources
-    filter_settings = config.static_filter
+    telegram_settings = config.telegram
     validation_settings = config.ip_validation
     behavior = config.behavior
 
-    logger.info("Конвейер сбора подписок: запуск.")
+    logger.info("Конвейер Telegram-профилей: запуск.")
     paths.output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Этап «Подготовка»: начат — проверка списка источников.")
+    logger.info("Этап «Подготовка»: начат — проверка seed-источников.")
     try:
         urls = read_input_urls(paths.input_path)
     except InputError:
@@ -152,36 +189,26 @@ async def run_collection(
             },
         )
         return 2
-    logger.info("Этап «Подготовка»: завершён — источников: %d.", len(urls))
+    logger.info("Этап «Подготовка»: завершён — seed-источников: %d.", len(urls))
 
     stats.input_sources = len(urls)
-    fetch_started_at = perf_counter()
-    logger.info("Этап «Загрузка источников»: начат — адресов: %d.", len(urls))
     owns_client = client is None
     active_client = client or default_client(source_settings)
     try:
+        fetch_started_at = perf_counter()
+        logger.info("Этап «Загрузка seed-источников»: начат — адресов: %d.", len(urls))
         sources = await fetch_sources(urls, active_client, started_at, source_settings)
-    finally:
-        if owns_client:
-            await active_client.aclose()
-    fetch_duration_ms = _stage_duration_ms(stats, "sources_fetch", fetch_started_at)
-    usable_sources = sum(source.text is not None for source in sources)
-    logger.info(
-        "Этап «Загрузка источников»: завершён за %s — пригодных источников: %d, исключённых: %d.",
-        _duration_text(fetch_duration_ms),
-        usable_sources,
-        len(sources) - usable_sources,
-    )
+        fetch_duration_ms = _stage_duration_ms(stats, "sources_fetch", fetch_started_at)
+        usable_sources = sum(source.text is not None for source in sources)
+        logger.info(
+            "Этап «Загрузка seed-источников»: завершён за %s — пригодных: %d, исключённых: %d.",
+            _duration_text(fetch_duration_ms),
+            usable_sources,
+            len(sources) - usable_sources,
+        )
 
-    static_filter_started_at = perf_counter()
-    logger.info(
-        "Этап «Статическая фильтрация»: начат — потоков: %d, размер батча: %d.",
-        filter_settings.workers,
-        filter_settings.batch_size,
-    )
-    accepted: list[Profile] = []
-    loop = asyncio.get_running_loop()
-    with ThreadPoolExecutor(max_workers=filter_settings.workers) as executor:
+        discovery_started_at = perf_counter()
+        discovered_handles: set[str] = set()
         for source in sources:
             stats.source_freshness[source.freshness.value] = (
                 stats.source_freshness.get(source.freshness.value, 0) + 1
@@ -190,61 +217,133 @@ async def run_collection(
                 stats.exclude(source.reason or source.freshness.value)
                 continue
             stats.fetched_sources += 1
-            lines = extract_candidate_lines(source.text)
-            stats.candidate_lines += len(lines)
-            for batch_start in range(0, len(lines), filter_settings.batch_size):
-                line_batch = lines[batch_start : batch_start + filter_settings.batch_size]
-                results = await asyncio.gather(
-                    *(
-                        loop.run_in_executor(
-                            executor,
-                            _parse_and_filter_candidate,
-                            line,
-                            source.source_url,
-                        )
-                        for line in line_batch
-                    )
+            seed_lines = extract_candidate_lines(source.text)
+            stats.candidate_lines += len(seed_lines)
+            for line in seed_lines:
+                discovered_handles.update(extract_telegram_handles(line))
+        write_channel_registry(telegram_settings.registry_path, discovered_handles)
+        stats.telegram_discovered_channels = len(discovered_handles)
+        _stage_duration_ms(stats, "telegram_discovery", discovery_started_at)
+        logger.info("Этап «Discovery Telegram»: обнаружено каналов: %d.", len(discovered_handles))
+
+        channel_state = load_channel_state(telegram_settings.state_path)
+        active_handles = [
+            handle
+            for handle in sorted(discovered_handles)
+            if channel_state.get(channel_state_key(handle), None) is None
+            or channel_state[channel_state_key(handle)].status != "excluded"
+        ]
+        preview_started_at = perf_counter()
+        previews = await fetch_telegram_previews(
+            active_handles,
+            active_client,
+            started_at,
+            telegram_settings,
+        )
+        _stage_duration_ms(stats, "telegram_preview_fetch", preview_started_at)
+    finally:
+        if owns_client:
+            await active_client.aclose()
+
+    async def fetch_next_preview(handle: str, before: str):
+        if not owns_client:
+            return await fetch_telegram_preview_page(
+                handle,
+                before,
+                active_client,
+                telegram_settings,
+            )
+        async with default_client(source_settings) as page_client:
+            return await fetch_telegram_preview_page(
+                handle,
+                before,
+                page_client,
+                telegram_settings,
+            )
+
+    channel_profiles: dict[str, list[Profile]] = {}
+    channel_sources: dict[str, str] = {}
+    channel_metrics: dict[str, dict[str, int | bool]] = {}
+    for handle, preview in zip(active_handles, previews, strict=True):
+        channel_sources[handle] = preview.source_url
+        metric_values: dict[str, int | bool] = {
+            "preview_available": preview.text is not None,
+            "fresh_posts": 0,
+            "all_uri_candidates": 0,
+            "supported_candidates": 0,
+            "static_accepted": 0,
+            "unique_profiles": 0,
+        }
+        if preview.text is None:
+            stats.telegram_preview_failed += 1
+            stats.exclude(preview.reason or "telegram_preview_failed")
+            channel_profiles[handle] = []
+            channel_metrics[handle] = metric_values
+            continue
+        posts = parse_preview_posts(
+            preview.text,
+            handle,
+            started_at,
+            telegram_settings.max_post_age_hours,
+        )
+        previous = channel_state.get(channel_state_key(handle))
+        if previous is None or previous.status != "approved":
+            posts = posts[: telegram_settings.sample_post_limit]
+        else:
+            seen_message_ids = {post.message_id for post in posts}
+            before = posts[-1].message_id if posts else None
+            for _ in range(1, telegram_settings.max_pages_per_channel):
+                if before is None:
+                    break
+                next_preview = await fetch_next_preview(handle, before)
+                if next_preview.text is None:
+                    stats.exclude(next_preview.reason or "telegram_preview_failed")
+                    break
+                next_posts = parse_preview_posts(
+                    next_preview.text,
+                    handle,
+                    started_at,
+                    telegram_settings.max_post_age_hours,
                 )
-                for profile, parsed, reason in results:
-                    if not parsed:
-                        stats.exclude(reason or "invalid_or_unsupported")
-                        continue
-                    stats.parsed_profiles += 1
-                    if profile is None:
-                        stats.exclude(reason or "policy_rejected")
-                        continue
-                    accepted.append(profile)
-                    stats.accepted_profiles += 1
-    static_filter_duration_ms = _stage_duration_ms(stats, "static_filter", static_filter_started_at)
-    logger.info(
-        "Этап «Статическая фильтрация»: завершён за %s — кандидатов: %d, "
-        "допущено: %d, исключено: %d.",
-        _duration_text(static_filter_duration_ms),
-        stats.candidate_lines,
-        stats.accepted_profiles,
-        stats.candidate_lines - stats.accepted_profiles,
-    )
+                if not next_posts:
+                    break
+                new_posts = [post for post in next_posts if post.message_id not in seen_message_ids]
+                next_before = next_posts[-1].message_id
+                if not new_posts or next_before == before:
+                    break
+                posts.extend(new_posts)
+                seen_message_ids.update(post.message_id for post in new_posts)
+                before = next_before
+        raw_uris = extract_profile_uris(posts)
+        stats.telegram_posts_in_window += len(posts)
+        stats.telegram_uri_candidates += len(raw_uris)
+        profiles, supported_candidates, static_accepted = _parse_channel_profiles(
+            raw_uris,
+            preview.source_url,
+            stats,
+        )
+        metric_values.update(
+            fresh_posts=len(posts),
+            all_uri_candidates=len(raw_uris),
+            supported_candidates=supported_candidates,
+            static_accepted=static_accepted,
+            unique_profiles=len(profiles),
+        )
+        stats.telegram_supported_uri += supported_candidates
+        stats.telegram_policy_accepted_uri += static_accepted
+        stats.telegram_unique_uri += len(profiles)
+        channel_profiles[handle] = profiles
+        channel_metrics[handle] = metric_values
 
     deduplication_started_at = perf_counter()
-    logger.info("Этап «Удаление повторов»: начат — профилей до обработки: %d.", len(accepted))
-    unique = deduplicate(accepted)
+    all_profiles = [profile for profiles in channel_profiles.values() for profile in profiles]
+    unique = deduplicate(all_profiles)
     stats.unique_profiles = len(unique)
-    deduplication_duration_ms = _stage_duration_ms(stats, "deduplication", deduplication_started_at)
-    logger.info(
-        "Этап «Удаление повторов»: завершён за %s — уникальных: %d, удалено повторов: %d.",
-        _duration_text(deduplication_duration_ms),
-        stats.unique_profiles,
-        len(accepted) - stats.unique_profiles,
-    )
+    _stage_duration_ms(stats, "deduplication", deduplication_started_at)
 
     validation_started_at = perf_counter()
     excluded_before_validation = stats.excluded.copy()
-    logger.info(
-        "Этап «Xray IP-проверка»: начат — профилей: %d, параллельность: %d, размер батча: %d.",
-        len(unique),
-        validation_settings.request_concurrency,
-        validation_settings.batch_size,
-    )
+    logger.info("Этап «Xray IP-проверка»: начат — профилей: %d.", len(unique))
 
     async def run_probe_batch(batch: Sequence[Profile]) -> list[ProbeResult]:
         return await probe_batch(batch, paths.xray_path, settings=validation_settings)
@@ -256,13 +355,7 @@ async def run_collection(
         batch_size=validation_settings.batch_size,
         stats=stats,
     )
-    validation_duration_ms = _stage_duration_ms(stats, "xray_ip_validation", validation_started_at)
-    logger.info(
-        "Этап «Xray IP-проверка»: завершён за %s — прошли: %d, исключены: %d.",
-        _duration_text(validation_duration_ms),
-        stats.validated_profiles,
-        len(unique) - stats.validated_profiles,
-    )
+    _stage_duration_ms(stats, "xray_ip_validation", validation_started_at)
     validation_failures = {
         reason: count - excluded_before_validation.get(reason, 0)
         for reason, count in stats.excluded.items()
@@ -273,20 +366,73 @@ async def run_collection(
             f"{reason}: {count}" for reason, count in sorted(validation_failures.items())
         )
         logger.info("Причины отказов Xray IP-проверки: %s.", summary)
+    validated_fingerprints = {profile_fingerprint(profile) for profile in validated}
+
+    evaluation_started_at = perf_counter()
+    evaluations = {}
+    for handle in active_handles:
+        local_profiles = channel_profiles[handle]
+        xray_passed = sum(
+            profile_fingerprint(profile) in validated_fingerprints for profile in local_profiles
+        )
+        metrics = channel_metrics[handle]
+        evaluation = evaluate_channel(
+            handle,
+            ChannelMetrics(
+                preview_available=bool(metrics["preview_available"]),
+                fresh_posts=int(metrics["fresh_posts"]),
+                all_uri_candidates=int(metrics["all_uri_candidates"]),
+                supported_candidates=int(metrics["supported_candidates"]),
+                static_accepted=int(metrics["static_accepted"]),
+                unique_profiles=int(metrics["unique_profiles"]),
+                xray_passed=xray_passed,
+                xray_failed=len(local_profiles) - xray_passed,
+            ),
+            channel_state.get(channel_state_key(handle)),
+            config.channel_quality,
+            started_at,
+        )
+        evaluations[handle] = evaluation
+    updated_channel_state = update_channel_state(
+        telegram_settings.state_path,
+        evaluations,
+        started_at,
+    )
+    _stage_duration_ms(stats, "channel_quality", evaluation_started_at)
+    discovered_records = [
+        updated_channel_state.get(channel_state_key(handle)) for handle in discovered_handles
+    ]
+    stats.telegram_candidate_channels = sum(
+        record is not None and record.status == "candidate" for record in discovered_records
+    )
+    stats.telegram_approved_channels = sum(
+        record is not None and record.status == "approved" for record in discovered_records
+    )
+    stats.telegram_excluded_channels = sum(
+        record is not None and record.status == "excluded" for record in discovered_records
+    )
+
+    approved_handles = {
+        handle
+        for handle, evaluation in evaluations.items()
+        if evaluation.status == "approved"
+    }
+    approved_source_urls = {channel_sources[handle] for handle in approved_handles}
+    profiles = [profile for profile in validated if profile.source_url in approved_source_urls]
 
     publication_started_at = perf_counter()
-    logger.info("Этап «Публикация»: начат.")
-    fingerprints_by_profile_id = {
-        id(profile): profile_fingerprint(profile) for profile in validated
-    }
-    state = update_state(paths.state_path, list(fingerprints_by_profile_id.values()), started_at)
-    profiles = list(validated)
+    fingerprints_by_profile_id = {id(profile): profile_fingerprint(profile) for profile in profiles}
+    profile_state = update_state(
+        paths.state_path,
+        list(fingerprints_by_profile_id.values()),
+        started_at,
+    )
     if behavior.strict_first_seen:
         profiles = [
             profile
             for profile in profiles
             if _within_first_seen_window(
-                state[fingerprints_by_profile_id[id(profile)]].first_seen_at,
+                profile_state[fingerprints_by_profile_id[id(profile)]].first_seen_at,
                 started_at,
                 source_settings.max_age_hours,
             )
@@ -323,9 +469,11 @@ async def run_collection(
         )
         raise
     logger.info(
-        "Этап «Публикация»: завершён — добавлено профилей: %d. Конвейер завершён за %s.",
+        "Этап «Публикация»: завершён — добавлено профилей: %d; каналов approved: %d; "
+        "состояний: %d.",
         publication.new_profiles,
-        _duration_text(stats.timing_ms["total"]),
+        len(approved_handles),
+        len(updated_channel_state),
     )
     return 2 if behavior.fail_on_empty and publication.new_profiles == 0 else 0
 

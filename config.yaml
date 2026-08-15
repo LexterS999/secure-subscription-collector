@@ -26,6 +26,36 @@ sources:
   # Значение заголовка User-Agent, отправляемого при запросе источников.
   user_agent: secure-subscription-collector/0.1
 
+telegram:
+  # Публичный реестр нормализованных Telegram-каналов, обнаруженных в seed-профилях.
+  registry: tg_channels
+  # Обезличенное накопительное состояние оценки каналов.
+  state: .collector/channel_state.json
+  # Принимаются только Telegram-посты, опубликованные в указанном окне; максимум 72 часа.
+  max_post_age_hours: 72
+  # Максимум одновременных запросов к публичным preview-страницам t.me.
+  concurrency: 4
+  # Предельное время ответа одной preview-страницы в секундах.
+  timeout_seconds: 15.0
+  # Максимальный размер HTML preview-страницы в байтах.
+  max_response_bytes: 2097152
+  # Максимум разрешённых HTTPS-перенаправлений preview-страницы.
+  max_redirects: 2
+  # Верхняя граница страниц preview, которые можно прочитать у одного канала.
+  max_pages_per_channel: 8
+  # Верхняя граница сообщений, учитываемых при оценке канала-кандидата.
+  sample_post_limit: 25
+
+channel_quality:
+  # Минимальный score 0–100, после которого канал может стать approved.
+  approval_score: 55.0
+  # Число независимых запусков с evidence перед automatic approval/exclusion.
+  min_evidence_runs: 2
+  # Минимум поддерживаемых URI в окне для достаточной оценки.
+  min_supported_candidates: 2
+  # Минимум датированных свежих сообщений для полного activity score.
+  min_fresh_posts: 2
+
 static_filter:
   # Число потоков для разбора URI и статической проверки безопасности профилей.
   workers: 160

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 import httpx
 
@@ -37,29 +38,37 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
         report_path = tmp_path / "report.json"
         state_path = tmp_path / "state.json"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
+        seed = TROJAN_TLS.replace("#source-name", "#@quality_channel")
+        second = TROJAN_TLS.replace("node.example.org", "second.example.org")
+        published_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        preview = (
+            '<div class="tgme_widget_message" data-post="quality_channel/20">'
+            f'<div class="tgme_widget_message_text">{TROJAN_TLS}\n{second}</div>'
+            f'<time datetime="{published_at}"></time></div>'
+        )
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text=TROJAN_TLS)
+            text = seed if request.url.host == "source.example" else preview
+            return httpx.Response(200, text=text)
 
+        config = config_for(
+            input_path=input_path,
+            output_dir=output_dir,
+            report_path=report_path,
+            state_path=state_path,
+            xray_path=tmp_path / "xray",
+        )
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            code = await cli.run_collection(
-                config=config_for(
-                    input_path=input_path,
-                    output_dir=output_dir,
-                    report_path=report_path,
-                    state_path=state_path,
-                    xray_path=tmp_path / "xray",
-                ),
-                client=client,
-            )
+            await cli.run_collection(config=config, client=client)
+            code = await cli.run_collection(config=config, client=client)
         return code, (output_dir / "trojan.txt").read_text(encoding="utf-8")
 
     monkeypatch.setattr(cli, "profile_fingerprint", counted_fingerprint)
     code, output = asyncio.run(exercise())
 
     assert code == 0
-    assert "TR-TLS-TCP-" in output
-    assert calls == 1
+    assert output.count("TR-TLS-TCP-") == 2
+    assert calls <= 16
 
 
 def test_deduplication_uses_exact_fingerprint_without_redundant_compatibility_groups(

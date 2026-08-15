@@ -1,57 +1,57 @@
 {
   "counts": {
-    "accepted_profiles": 21854,
-    "candidate_lines": 53072,
-    "emitted_profiles": 1707,
+    "accepted_profiles": 21677,
+    "candidate_lines": 53741,
+    "emitted_profiles": 2036,
     "excluded": {
       "config_invalid": 1536,
-      "insecure_flag": 3867,
+      "insecure_flag": 3321,
       "invalid_or_unsupported": 6,
       "invalid_reality_key": 21,
-      "missing_fingerprint": 6264,
-      "missing_required_secret": 11758,
-      "missing_security": 7487,
-      "missing_sni": 1786,
-      "no_endpoint_confirmation": 6642,
-      "probe_error": 1,
+      "missing_fingerprint": 6496,
+      "missing_required_secret": 12863,
+      "missing_security": 7539,
+      "missing_sni": 1784,
+      "no_endpoint_confirmation": 6226,
+      "probe_error": 6,
       "response_too_large": 2,
-      "unsupported_transport": 29
+      "unsupported_transport": 34
     },
     "fetched_sources": 21,
     "input_sources": 23,
-    "parsed_profiles": 53066,
-    "probed_profiles": 9886,
+    "parsed_profiles": 53735,
+    "probed_profiles": 9804,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 20
     },
-    "unique_profiles": 9886,
-    "validated_profiles": 1707
+    "unique_profiles": 9804,
+    "validated_profiles": 2036
   },
-  "generated_at": "2026-08-15T12:20:13Z",
+  "generated_at": "2026-08-15T08:16:59Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 64,
-        "total": 64
+        "new": 59,
+        "total": 59
       },
       "trojan": {
-        "new": 683,
-        "total": 683
+        "new": 696,
+        "total": 696
       },
       "vless": {
-        "new": 960,
-        "total": 960
+        "new": 1281,
+        "total": 1281
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-15T10:36:53+00:00",
+      "last_modified": "2026-08-15T08:16:59+00:00",
       "reason": null
     },
     {
@@ -167,11 +167,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 283,
-    "publication": 120,
-    "sources_fetch": 661,
-    "static_filter": 6135,
-    "total": 685297,
-    "xray_ip_validation": 678098
+    "deduplication": 281,
+    "publication": 142,
+    "sources_fetch": 1598,
+    "static_filter": 6393,
+    "total": 642174,
+    "xray_ip_validation": 633758
   }
 }
