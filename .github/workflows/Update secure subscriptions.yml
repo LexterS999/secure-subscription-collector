@@ -3,7 +3,7 @@ name: Update secure subscriptions
 'on':
   schedule:
     - cron: '0 */4 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: write
