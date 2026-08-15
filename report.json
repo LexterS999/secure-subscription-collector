@@ -1,26 +1,153 @@
 {
-  "generated_at": "2026-08-14T00:00:00Z",
-  "policy": "Strict Secure + Xray IP validation",
-  "status": "reset_pending_next_validation_run",
+  "counts": {
+    "accepted_profiles": 16918,
+    "candidate_lines": 40573,
+    "emitted_profiles": 0,
+    "excluded": {
+      "config_invalid": 1155,
+      "http_error": 1,
+      "insecure_flag": 3392,
+      "invalid_or_unsupported": 4,
+      "invalid_reality_key": 20,
+      "listener_timeout": 512,
+      "missing_fingerprint": 4958,
+      "missing_required_secret": 8846,
+      "missing_security": 5022,
+      "missing_sni": 1397,
+      "response_too_large": 2,
+      "timeout": 7167,
+      "unsupported_transport": 16
+    },
+    "fetched_sources": 16,
+    "input_sources": 18,
+    "parsed_profiles": 40569,
+    "probed_profiles": 8835,
+    "source_freshness": {
+      "failed": 2,
+      "recent": 1,
+      "unknown": 15
+    },
+    "unique_profiles": 8835,
+    "validated_profiles": 0
+  },
+  "generated_at": "2026-08-15T02:46:56Z",
+  "max_source_age_hours": 72,
+  "policy": "Strict Secure",
   "publication": {
     "protocols": {
-      "vless": {"new": 0, "total": 0},
-      "trojan": {"new": 0, "total": 0},
-      "hysteria2": {"new": 0, "total": 0}
+      "hysteria2": {
+        "new": 0,
+        "total": 0
+      },
+      "trojan": {
+        "new": 0,
+        "total": 0
+      },
+      "vless": {
+        "new": 0,
+        "total": 0
+      }
     }
   },
-  "counts": {
-    "input_sources": 0,
-    "fetched_sources": 0,
-    "candidate_lines": 0,
-    "parsed_profiles": 0,
-    "accepted_profiles": 0,
-    "unique_profiles": 0,
-    "probed_profiles": 0,
-    "validated_profiles": 0,
-    "emitted_profiles": 0,
-    "source_freshness": {},
-    "excluded": {}
-  },
-  "timing_ms": {}
+  "sources": [
+    {
+      "freshness": "recent",
+      "last_modified": "2026-08-15T02:46:57+00:00",
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "response_too_large"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "response_too_large"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    }
+  ],
+  "strict_first_seen": false,
+  "timing_ms": {
+    "deduplication": 231,
+    "publication": 4,
+    "sources_fetch": 1879,
+    "static_filter": 4942,
+    "total": 285577,
+    "xray_ip_validation": 278520
+  }
 }
