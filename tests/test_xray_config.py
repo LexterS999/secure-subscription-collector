@@ -247,3 +247,72 @@ def test_vless_allowed_transports_pass_official_xray_syntax_validation(
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+def test_batch_config_routes_each_loopback_port_to_its_own_outbound() -> None:
+    """Catches batch routing that can send an IP check through another profile's outbound."""
+    from subscription_collector.xray_config import build_xray_batch_config
+
+    profiles = [
+        _profile(
+            "trojan://correct-horse@trojan.example.org:443"
+            "?security=tls&sni=www.example.com&fp=firefox&type=tcp"
+        ),
+        _profile(
+            "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+            f"?encryption=none&security=reality&sni=www.example.com&fp=chrome&pbk={PBK}&type=grpc"
+        ),
+    ]
+
+    config = build_xray_batch_config(profiles, [31001, 31002])
+
+    assert [inbound["port"] for inbound in config["inbounds"]] == [31001, 31002]
+    assert [inbound["tag"] for inbound in config["inbounds"]] == [
+        "probe-inbound-0",
+        "probe-inbound-1",
+    ]
+    assert [outbound["tag"] for outbound in config["outbounds"]] == [
+        "profile-0",
+        "profile-1",
+    ]
+    assert config["routing"]["rules"] == [
+        {"type": "field", "localPort": 31001, "outboundTag": "profile-0"},
+        {"type": "field", "localPort": 31002, "outboundTag": "profile-1"},
+    ]
+
+
+def test_batch_config_passes_official_xray_syntax_validation(tmp_path) -> None:
+    """Catches batch localPort routing rejected by Xray even when Python accepts it."""
+    import json
+    import os
+    import subprocess
+
+    from subscription_collector.xray_config import build_xray_batch_config
+
+    xray_path = os.environ.get("XRAY_TEST_BINARY")
+    if not xray_path:
+        pytest.skip("XRAY_TEST_BINARY is not set")
+    profiles = [
+        _profile(
+            "trojan://correct-horse@trojan.example.org:443"
+            "?security=tls&sni=www.example.com&fp=firefox&type=tcp"
+        ),
+        _profile(
+            "hy2://hy2-password@hy2.example.org:8443"
+            "?security=tls&sni=www.example.com&obfs=salamander&obfs-password=obfs-secret"
+        ),
+    ]
+    config_path = tmp_path / "batch.json"
+    config_path.write_text(
+        json.dumps(build_xray_batch_config(profiles, [31101, 31102])), encoding="utf-8"
+    )
+    config_path.chmod(0o600)
+
+    completed = subprocess.run(
+        [xray_path, "run", "-test", "-c", str(config_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr

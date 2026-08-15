@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from .models import Profile, Protocol
 
 
@@ -131,6 +133,53 @@ def _hysteria2_outbound(profile: Profile, tag: str) -> dict[str, object]:
             "port": profile.port,
         },
         "streamSettings": stream,
+    }
+
+
+def build_xray_batch_config(
+    profiles: Sequence[Profile], socks_ports: Sequence[int]
+) -> dict[str, object]:
+    """Build a loopback-only Xray batch that routes every SOCKS port to one outbound."""
+    if not profiles or len(profiles) != len(socks_ports):
+        raise ValueError("profiles_and_ports_must_match")
+    if len(set(socks_ports)) != len(socks_ports) or any(
+        not 1 <= port <= 65535 for port in socks_ports
+    ):
+        raise ValueError("invalid_or_duplicate_socks_port")
+
+    builders = {
+        Protocol.VLESS: _vless_outbound,
+        Protocol.TROJAN: _trojan_outbound,
+        Protocol.HYSTERIA2: _hysteria2_outbound,
+    }
+    inbounds: list[dict[str, object]] = []
+    outbounds: list[dict[str, object]] = []
+    rules: list[dict[str, object]] = []
+    for index, (profile, port) in enumerate(zip(profiles, socks_ports, strict=True)):
+        outbound_tag = f"profile-{index}"
+        inbound_tag = f"probe-inbound-{index}"
+        try:
+            outbound = builders[profile.protocol](profile, outbound_tag)
+        except KeyError as exc:
+            raise ValueError("unsupported_protocol") from exc
+        inbounds.append(
+            {
+                "listen": "127.0.0.1",
+                "port": port,
+                "protocol": "socks",
+                "settings": {"auth": "noauth", "udp": False},
+                "tag": inbound_tag,
+            }
+        )
+        outbounds.append(outbound)
+        rules.append(
+            {"type": "field", "localPort": port, "outboundTag": outbound_tag}
+        )
+    return {
+        "log": {"loglevel": "warning"},
+        "inbounds": inbounds,
+        "outbounds": outbounds,
+        "routing": {"rules": rules},
     }
 
 

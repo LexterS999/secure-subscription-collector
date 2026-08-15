@@ -15,11 +15,11 @@ from .decoder import extract_candidate_lines
 from .dedup import deduplicate, profile_fingerprint
 from .fetcher import default_client, fetch_sources
 from .input_reader import InputError, read_input_urls
-from .models import Profile, RunStats
+from .models import ProbeResult, Profile, RunStats
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
-from .probe import probe_profile
+from .probe import probe_batch, tcp_precheck
 from .report import build_report
 from .state import update_state
 from .writer import write_json_atomic
@@ -66,37 +66,83 @@ def _parse_and_filter_candidate(
     return decision.profile, True, None
 
 
+async def _filter_tcp_reachable_profiles(
+    profiles: Sequence[Profile],
+    *,
+    runner: Callable[[Profile], Awaitable[str | None]],
+    concurrency: int,
+    stats: RunStats,
+) -> list[Profile]:
+    """Exclude TCP-unreachable profiles before allocating an Xray batch; keep QUIC profiles."""
+    if concurrency < 1:
+        raise ValueError("tcp_precheck_concurrency must be positive")
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def check(profile: Profile) -> tuple[Profile, str | None]:
+        async with semaphore:
+            try:
+                return profile, await runner(profile)
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
+                    raise
+                return profile, "tcp_precheck_error"
+
+    outcomes = await asyncio.gather(*(check(profile) for profile in profiles))
+    kept: list[Profile] = []
+    for profile, category in outcomes:
+        if category is None:
+            kept.append(profile)
+        else:
+            stats.exclude(category)
+    return kept
+
+
 async def _validate_profiles(
     profiles: Sequence[Profile],
     *,
-    runner: Callable[[Profile], Awaitable[object]],
-    concurrency: int,
+    batch_runner: Callable[[Sequence[Profile]], Awaitable[Sequence[ProbeResult]]],
+    batch_concurrency: int,
     batch_size: int,
     stats: RunStats,
 ) -> list[Profile]:
-    """Run bounded Xray checks and return only profiles with a successful public-IP response."""
-    if concurrency < 1:
-        raise ValueError("probe_concurrency must be positive")
+    """Run bounded Xray batches and return only profiles with a successful public-IP response."""
+    if batch_concurrency < 1:
+        raise ValueError("probe_batch_concurrency must be positive")
     if batch_size < 1:
         raise ValueError("probe_batch_size must be positive")
 
-    accepted: list[Profile] = []
-    semaphore = asyncio.Semaphore(concurrency)
+    batches = [
+        profiles[start : start + batch_size]
+        for start in range(0, len(profiles), batch_size)
+    ]
+    semaphore = asyncio.Semaphore(batch_concurrency)
 
-    async def validate_one(profile: Profile) -> tuple[Profile, object]:
+    async def validate_batch(
+        batch_index: int, batch: Sequence[Profile]
+    ) -> tuple[int, Sequence[Profile], list[ProbeResult]]:
         async with semaphore:
-            return profile, await runner(profile)
+            try:
+                results = list(await batch_runner(batch))
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
+                    raise
+                results = [ProbeResult(False, 0, None, "batch_runner_error") for _ in batch]
+            if len(results) != len(batch):
+                results = [ProbeResult(False, 0, None, "batch_result_mismatch") for _ in batch]
+            return batch_index, batch, results
 
-    for batch_start in range(0, len(profiles), batch_size):
-        batch = profiles[batch_start : batch_start + batch_size]
-        results = await asyncio.gather(*(validate_one(profile) for profile in batch))
-        for profile, result in results:
+    completed_batches = await asyncio.gather(
+        *(validate_batch(index, batch) for index, batch in enumerate(batches))
+    )
+    accepted: list[Profile] = []
+    for _, batch, results in sorted(completed_batches, key=lambda item: item[0]):
+        for profile, result in zip(batch, results, strict=True):
             stats.probed_profiles += 1
-            if getattr(result, "passed", False):
+            if result.passed:
                 accepted.append(profile)
                 stats.validated_profiles += 1
             else:
-                stats.exclude(getattr(result, "error_category", None) or "ip_validation_failed")
+                stats.exclude(result.error_category or "ip_validation_failed")
     return accepted
 
 
@@ -117,6 +163,9 @@ async def run_collection(
     probe_startup_timeout_seconds: float = 1.0,
     probe_concurrency: int = 32,
     probe_batch_size: int = 256,
+    probe_batch_concurrency: int = 2,
+    tcp_precheck_timeout_seconds: float = 0.35,
+    tcp_precheck_concurrency: int = 256,
     client: httpx.AsyncClient | None = None,
 ) -> int:
     """Collect, statically filter, Xray-validate, and publish supported profiles."""
@@ -139,6 +188,12 @@ async def run_collection(
         raise ValueError("probe_concurrency must be positive")
     if probe_batch_size < 1:
         raise ValueError("probe_batch_size must be positive")
+    if probe_batch_concurrency < 1:
+        raise ValueError("probe_batch_concurrency must be positive")
+    if tcp_precheck_timeout_seconds <= 0:
+        raise ValueError("tcp_precheck_timeout_seconds must be positive")
+    if tcp_precheck_concurrency < 1:
+        raise ValueError("tcp_precheck_concurrency must be positive")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Этап «Подготовка»: начат — проверка списка источников.")
@@ -253,26 +308,51 @@ async def run_collection(
         len(accepted) - stats.unique_profiles,
     )
 
+    tcp_precheck_started_at = perf_counter()
+    logger.info(
+        "Этап «TCP-предфильтр»: начат — профилей: %d, параллельность: %d.",
+        len(unique),
+        tcp_precheck_concurrency,
+    )
+
+    async def run_tcp_precheck(profile: Profile) -> str | None:
+        return await tcp_precheck(profile, timeout_seconds=tcp_precheck_timeout_seconds)
+
+    prechecked = await _filter_tcp_reachable_profiles(
+        unique,
+        runner=run_tcp_precheck,
+        concurrency=tcp_precheck_concurrency,
+        stats=stats,
+    )
+    tcp_precheck_duration_ms = _stage_duration_ms(stats, "tcp_precheck", tcp_precheck_started_at)
+    logger.info(
+        "Этап «TCP-предфильтр»: завершён за %s — допущено: %d, исключено: %d.",
+        _duration_text(tcp_precheck_duration_ms),
+        len(prechecked),
+        len(unique) - len(prechecked),
+    )
+
     validation_started_at = perf_counter()
     logger.info(
         "Этап «Xray IP-проверка»: начат — профилей: %d, параллельность: %d, размер батча: %d.",
-        len(unique),
+        len(prechecked),
         probe_concurrency,
         probe_batch_size,
     )
 
-    async def run_probe(profile: Profile):
-        return await probe_profile(
-            profile,
+    async def run_probe_batch(batch: Sequence[Profile]) -> list[ProbeResult]:
+        return await probe_batch(
+            batch,
             xray_path,
             timeout_seconds=probe_timeout_seconds,
             startup_timeout_seconds=probe_startup_timeout_seconds,
+            request_concurrency=probe_concurrency,
         )
 
     validated = await _validate_profiles(
-        unique,
-        runner=run_probe,
-        concurrency=probe_concurrency,
+        prechecked,
+        batch_runner=run_probe_batch,
+        batch_concurrency=probe_batch_concurrency,
         batch_size=probe_batch_size,
         stats=stats,
     )
@@ -281,7 +361,7 @@ async def run_collection(
         "Этап «Xray IP-проверка»: завершён за %s — прошли: %d, исключены: %d.",
         _duration_text(validation_duration_ms),
         stats.validated_profiles,
-        len(unique) - stats.validated_profiles,
+        len(prechecked) - stats.validated_profiles,
     )
 
     publication_started_at = perf_counter()
@@ -356,6 +436,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--probe-startup-timeout-seconds", type=float, default=1.0)
     parser.add_argument("--probe-concurrency", type=int, default=32)
     parser.add_argument("--probe-batch-size", type=int, default=256)
+    parser.add_argument("--probe-batch-concurrency", type=int, default=2)
+    parser.add_argument("--tcp-precheck-timeout-seconds", type=float, default=0.35)
+    parser.add_argument("--tcp-precheck-concurrency", type=int, default=256)
     parser.add_argument("--source-concurrency", type=int, default=32)
     parser.add_argument("--analysis-workers", type=int, default=120)
     parser.add_argument("--analysis-batch-size", type=int, default=1024)
@@ -379,6 +462,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             probe_startup_timeout_seconds=args.probe_startup_timeout_seconds,
             probe_concurrency=args.probe_concurrency,
             probe_batch_size=args.probe_batch_size,
+            probe_batch_concurrency=args.probe_batch_concurrency,
+            tcp_precheck_timeout_seconds=args.tcp_precheck_timeout_seconds,
+            tcp_precheck_concurrency=args.tcp_precheck_concurrency,
             source_concurrency=args.source_concurrency,
             analysis_workers=args.analysis_workers,
             analysis_batch_size=args.analysis_batch_size,
