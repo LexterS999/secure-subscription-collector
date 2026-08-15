@@ -18,7 +18,6 @@ def config_for(tmp_path: Path):
         output_dir: Path | None = None,
         report_path: Path | None = None,
         state_path: Path | None = None,
-        xray_path: Path | None = None,
     ) -> CollectorConfig:
         config = load_config(PROJECT_ROOT / "config.yaml")
         return replace(
@@ -29,7 +28,6 @@ def config_for(tmp_path: Path):
                 output_dir=output_dir or tmp_path / "output",
                 report_path=report_path or tmp_path / "report.json",
                 state_path=state_path or tmp_path / "state.json",
-                xray_path=xray_path or tmp_path / "xray",
             ),
             telegram=replace(
                 config.telegram,

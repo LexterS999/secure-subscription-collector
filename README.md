@@ -1,63 +1,75 @@
 # Secure Subscription Collector
 
-`secure-subscription-collector` собирает профили **VLESS**, **Trojan** и **Hysteria2** из публичных Telegram-каналов, обнаруженных через seed-подписки в `input.txt`. Итоговые protocol-файлы содержат только URI из каналов с подтверждённым качеством, прошедшие строгую policy, точную дедупликацию и текущую Xray IP-проверку.
+`secure-subscription-collector` собирает URI профилей **VLESS**, **Trojan** и **Hysteria2** из публичных Telegram-каналов. Каналы находятся через seed-подписки в `input.txt`, затем оцениваются по наблюдаемым признакам качества. В итоговые файлы попадают только уникальные профили, прошедшие строгую статическую security policy, из каналов со статусом `approved`.
 
-> Проект запрашивает только публичные preview-страницы `https://t.me/s/<username>`. Telegram API, авторизация, private invite-ссылки, CAPTCHA, обход ограничений платформы и сбор закрытых каналов не используются.
+> Проект не запускает tunnel core, не делает проверку IP через профиль и не подтверждает сетевую доступность профиля. Пригодность профиля к подключению оператор проверяет самостоятельно в **v2rayNG** или ином доверенном клиенте.
+
+Сборщик запрашивает только публичные preview-страницы `https://t.me/s/<username>`. Telegram API, авторизация, private invite-ссылки, CAPTCHA, обход ограничений платформы и сбор закрытых каналов не используются.
 
 ## Конвейер
 
 ```text
 input.txt (HTTPS seed-подписки)
-  → raw VLESS/Trojan/Hysteria2 URI
-  → явные public Telegram handle
-  → tg_channels
-  → t.me/s/<username>, только последние 72 часа
-  → score канала и candidate/approved/excluded
-  → строгая policy → exact deduplication → Xray IP validation
-  → output/vless.txt, output/trojan.txt, output/hysteria2.txt
+  -> public Telegram handle discovery
+  -> t.me/s/<username> public preview, максимум 72 часа
+  -> URI extraction and parser
+  -> Strict Secure policy
+  -> exact fingerprint deduplication
+  -> content-quality gate for Telegram channel
+  -> output/vless.txt, output/trojan.txt, output/hysteria2.txt
 ```
 
-Seed URI нужны только для discovery и **не публикуются напрямую**. Сбой одного канала не прекращает обработку остальных.
+Seed URI нужны только для обнаружения публичных каналов и никогда не публикуются напрямую. Сбой одного канала изолирован: он не прекращает обработку остальных каналов.
 
-## Допустимые каналы и временное окно
+## Публичные каналы и временное окно
 
-Из полного raw URI, в том числе из URL-кодированного fragment, принимаются только явные публичные формы `@username`, `t.me/username`, `t.me/s/username`, `telegram.me/username` и `tg://resolve?domain=username`. Username обязан соответствовать `[A-Za-z][A-Za-z0-9_]{4,31}` и записывается в lowercase. `t.me/+…`, `joinchat`, `t.me/c/...`, bare words и некорректные имена отбрасываются.
+Из raw URI, включая URL-кодированный fragment, извлекаются только явные публичные формы `@username`, `t.me/username`, `t.me/s/username`, `telegram.me/username` и `tg://resolve?domain=username`. Username нормализуется в lowercase и обязан соответствовать шаблону `[A-Za-z][A-Za-z0-9_]{4,31}`. Приватные invite-ссылки, `t.me/c/...`, bare words и некорректные имена исключаются.
 
-Сообщение учитывается только при наличии `time[datetime]` и публикации в интервале `now_utc − 72 hours … now_utc`. Для уже одобренного канала сборщик использует контролируемый cursor `?before=<message_id>` и останавливается, когда окно пересечено, cursor повторился, достигнут `max_pages_per_channel` или preview перестал быть доступен.
+Сообщение учитывается только при наличии `time[datetime]` и публикации в интервале `now_utc − 72 hours … now_utc`. Для одобренного канала сборщик идёт по контролируемому cursor `?before=<message_id>` и завершает чтение при пересечении временного окна, повторе cursor, недоступном preview или достижении `max_pages_per_channel`.
 
-## Поддерживаемые профили и security policy
+## Поддерживаемые профили и Strict Secure policy
 
-| Протокол | Условие strict policy |
+| Протокол | Обязательные условия |
 |---|---|
-| VLESS | UUID; TLS с SNI и fingerprint либо Reality с `encryption=none`, SNI, fingerprint и валидным `pbk` |
-| Trojan | Пароль, TLS, SNI и fingerprint |
-| Hysteria2 / `hy2` | Пароль, TLS и SNI |
+| VLESS | UUID; TLS с SNI и fingerprint либо Reality с `encryption=none`, SNI, fingerprint и валидным 32-байтовым `pbk`. |
+| Trojan | Непустой пароль, TLS, SNI и fingerprint. |
+| Hysteria2 / hy2 | Непустой пароль, TLS и SNI. |
 
-Схемы вне области проекта и профили с `allowInsecure=1` либо `insecure=1` исключаются. Для каждого кандидата создаётся временная Xray-конфигурация с SOCKS-входом на `127.0.0.1`; в output попадает URI, подтвердивший соединение через свой Xray outbound. Временные Xray-процессы и JSON удаляются после попытки.
+Схемы вне указанной области, неподдерживаемые транспорты, а также профили с `allowInsecure=1`, `insecure=1`, `true` или `yes` исключаются. Валидация профиля является детерминированной: parser формирует структуру URI, policy проверяет обязательные security-поля, а deduplication удаляет только точные косметические дубликаты по каноническому SHA-256 fingerprint.
 
-## Quality gate
+## Quality gate для Telegram-каналов
+
+Оценка источника не зависит от сети CI-runner и вычисляется из редактированных агрегатов текущего публичного preview.
+
+| Сигнал | Вес | Измерение |
+|---|---:|---|
+| Доступность preview | 15 | Preview был успешно прочитан и разобран. |
+| Свежая активность | 20 | Число свежих постов относительно `min_fresh_posts`. |
+| Доля поддерживаемых URI | 20 | Поддерживаемые распарсенные кандидаты / все URI-кандидаты. |
+| Доля профилей, прошедших policy | 25 | Policy-accepted / поддерживаемые кандидаты. |
+| Уникальность | 20 | Уникальные fingerprint / policy-accepted профили. |
 
 | Статус | Условие | URI допускаются в output |
 |---|---|---|
-| `candidate` | Меньше двух независимых оценок | Нет |
-| `approved` | Не менее двух оценок, score ≥55, не менее двух поддерживаемых URI и есть фактический Xray-успех | Да |
-| `excluded` | Достаточно evidence, но пороги не выполнены либо нет Xray-успеха | Нет |
+| `candidate` | Ещё не накоплено `min_evidence_runs` независимых наблюдений. | Нет |
+| `approved` | Достаточно наблюдений, выполнены минимумы свежести и кандидатов, score не ниже `approval_score`. | Да |
+| `excluded` | Достаточно наблюдений, но не выполнены content-пороги или score. | Нет |
 
-Score 0–100 состоит из доступности preview (10%), активности за 72 часа (10%), доли поддерживаемых URI (15%), strict policy (20%), уникальности (15%), Xray viability с beta-smoothing (20%) и исторической стабильности (10%). Начальный beta-prior `alpha=1`, `beta=1` не даёт единичному результату исказить score. `excluded` не активируется автоматически: для ручной переоценки оператор удаляет нужную запись из `.collector/channel_state.json` и ждёт два новых запуска.
+Состояние каналов хранится в `.collector/channel_state.json` под SHA-256 ключом handle. Формат имеет версию `2`; записи старого формата не переносятся, потому что их статусы были основаны на удалённой сетевой проверке. При первой работе после обновления все каналы проходят новую content-only оценку.
 
-## Файлы результата
+## Итоговые файлы
 
 | Путь | Содержимое |
 |---|---|
-| `output/vless.txt` | Только Xray-validated VLESS из approved каналов |
-| `output/trojan.txt` | Только Xray-validated Trojan из approved каналов |
-| `output/hysteria2.txt` | Только Xray-validated Hysteria2/`hy2` из approved каналов |
-| `tg_channels` | Один нормализованный публичный `@username` на строку; все discovered каналы, включая excluded |
-| `.collector/state.json` | История profile fingerprint и времени наблюдения |
-| `.collector/channel_state.json` | Обезличенное quality state, индексированное SHA-256 handle |
-| `report.json` | Только агрегированные seed, Telegram, policy, Xray и publication metrics |
+| `output/vless.txt` | Уникальные VLESS из одобренных каналов, прошедшие strict policy. |
+| `output/trojan.txt` | Уникальные Trojan из одобренных каналов, прошедшие strict policy. |
+| `output/hysteria2.txt` | Уникальные Hysteria2/hy2 из одобренных каналов, прошедшие strict policy. |
+| `tg_channels` | Все обнаруженные нормализованные публичные `@username`, включая `candidate` и `excluded`. |
+| `.collector/state.json` | Время первого и последнего появления fingerprint для публикации. |
+| `.collector/channel_state.json` | Обезличенное состояние качества каналов. |
+| `report.json` | Только агрегированные метрики discovery, quality gate, publication и исключений. |
 
-URI в `output/` сохраняются в совместимом формате, но отображаемое имя после `#` заменяется на безопасный короткий код наподобие `VL-REALITY-GRPC-3ScvEG`. Raw HTML, текст постов, полный URI, host, SNI, UUID, пароль и ключи не пишутся в report, channel state или логи; они существуют только во временной памяти текущего запуска и в намеренно опубликованных protocol-файлах.
+URI сохраняются в совместимом формате, но имя после `#` заменяется на короткий безопасный код, например `VL-REALITY-GRPC-3ScvEG`. Raw HTML, текст постов, полные URI, host, SNI, UUID, пароль и ключи не записываются в report, channel state или логи.
 
 ## Конфигурация
 
@@ -82,11 +94,11 @@ channel_quality:
   min_fresh_posts: 2
 ```
 
-Все лимиты валидируются до сетевых запросов; `max_post_age_hours` не может превышать 72.
+Все лимиты проверяются до сетевых запросов. `max_post_age_hours` не может превышать 72.
 
-## Локальный запуск и проверка
+## Локальный запуск
 
-Для полного локального запуска требуется Xray binary. В CI версия читается из `config.yaml`, официальный архив проверяется по SHA-512 из release `.dgst`.
+Для запуска требуется Python и зависимости проекта; дополнительных tunnel binaries не требуется.
 
 ```bash
 python3 -m venv .venv
@@ -94,27 +106,21 @@ python3 -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
 
-PYTHONPATH=src python -m subscription_collector --xray-path /absolute/path/to/xray
+PYTHONPATH=src python -m subscription_collector
 PYTHONPATH=src ruff check .
 PYTHONPATH=src pytest -q
 ```
 
-Тесты не выполняют реальные HTTP-запросы и не используют реальные profile credentials. Xray-интеграционные тесты явно пропускаются, пока не задан `XRAY_TEST_BINARY`.
+Тесты используют mocked HTTP transport и не выполняют реальных запросов к Telegram или endpoint профилей.
 
-## GitHub Actions
+## Автоматизация
 
-Плановый workflow запускается каждые четыре часа. Job `collect` имеет только `contents: read`, запускает pipeline и передаёт строго ограниченные артефакты. Только job `publish` обладает `contents: write` и коммитит:
+Workflow запускается каждые четыре часа. Job `collect` имеет только `contents: read`, устанавливает Python-зависимости и выполняет content-quality pipeline. Только job `publish` имеет `contents: write` и коммитит ограниченный набор артефактов: `output/`, `report.json`, состояния и `tg_channels`.
 
-```text
-output/
-report.json
-.collector/state.json
-.collector/channel_state.json
-tg_channels
-```
+Отдельный workflow тестирования запускает `ruff` и `pytest` для `push` и `pull_request`. Все сторонние Actions закреплены полными commit SHA.
 
-Отдельный workflow `Test collector` запускает `ruff` и `pytest` на `push` и `pull_request`. Все сторонние Actions закреплены на полных commit SHA.
+## Профильный анализ и ограничения
 
-## Ограничения
+В текущем проекте **нет ML-модели, training artifacts, inference или ML-зависимостей**. Термин «анализ профиля» означает детерминированный parser, strict security policy и exact deduplication; эти компоненты покрыты автоматическими положительными, отрицательными и регрессионными тестами.
 
-Технический score измеряет только наблюдаемое качество публичного источника в коротком окне. Он не гарантирует доступность, безопасность, происхождение, правовой статус или пригодность стороннего профиля в сети пользователя. Успешная Xray-проверка подтверждает работоспособность из сети runner на момент запуска; решение об импорте и использовании профиля остаётся за оператором.
+Quality score измеряет технические признаки открытого источника в коротком окне. Он не гарантирует сетевую доступность, происхождение, безопасность, правовой статус или пригодность стороннего профиля в сети пользователя. Перед импортом и использованием профиля оператор обязан самостоятельно оценить его доверенность и подключаемость в своём клиенте.

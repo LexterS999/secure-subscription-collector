@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -24,8 +25,6 @@ HEALTHY = ChannelMetrics(
     supported_candidates=2,
     static_accepted=2,
     unique_profiles=2,
-    xray_passed=2,
-    xray_failed=0,
 )
 EMPTY = ChannelMetrics(
     preview_available=True,
@@ -34,8 +33,6 @@ EMPTY = ChannelMetrics(
     supported_candidates=0,
     static_accepted=0,
     unique_profiles=0,
-    xray_passed=0,
-    xray_failed=0,
 )
 
 
@@ -43,8 +40,9 @@ def test_candidate_requires_two_evidence_runs_before_approval() -> None:
     evaluation = evaluate_channel("quality_channel", HEALTHY, None, SETTINGS, NOW)
 
     assert evaluation.status == "candidate"
+    assert evaluation.reason == "insufficient_evidence"
     assert evaluation.evidence_runs == 1
-    assert evaluation.score >= SETTINGS.approval_score
+    assert evaluation.score == 100.0
 
 
 def test_second_healthy_evaluation_approves_channel() -> None:
@@ -61,10 +59,10 @@ def test_low_quality_channel_is_excluded_after_enough_evidence() -> None:
     second = evaluate_channel("quality_channel", EMPTY, first.to_state_record(), SETTINGS, NOW)
 
     assert second.status == "excluded"
-    assert second.reason == "insufficient_candidates"
+    assert second.reason == "insufficient_fresh_posts"
 
 
-def test_excluded_channel_remains_excluded_without_manual_reset() -> None:
+def test_excluded_channel_can_recover_when_new_content_meets_quality_threshold() -> None:
     first = evaluate_channel("quality_channel", EMPTY, None, SETTINGS, NOW)
     excluded = evaluate_channel("quality_channel", EMPTY, first.to_state_record(), SETTINGS, NOW)
     recovered = evaluate_channel(
@@ -75,7 +73,8 @@ def test_excluded_channel_remains_excluded_without_manual_reset() -> None:
         NOW,
     )
 
-    assert recovered.status == "excluded"
+    assert recovered.status == "approved"
+    assert recovered.reason == "approved"
 
 
 def test_registry_is_sorted_and_state_uses_hashed_channel_key(tmp_path: Path) -> None:
@@ -92,31 +91,6 @@ def test_registry_is_sorted_and_state_uses_hashed_channel_key(tmp_path: Path) ->
     assert "alpha_name" not in state_path.read_text(encoding="utf-8")
 
 
-def test_channel_without_xray_success_is_excluded_after_evidence() -> None:
-    unreachable = ChannelMetrics(
-        preview_available=True,
-        fresh_posts=2,
-        all_uri_candidates=2,
-        supported_candidates=2,
-        static_accepted=2,
-        unique_profiles=2,
-        xray_passed=0,
-        xray_failed=2,
-    )
-
-    first = evaluate_channel("quality_channel", unreachable, None, SETTINGS, NOW)
-    second = evaluate_channel(
-        "quality_channel",
-        unreachable,
-        first.to_state_record(),
-        SETTINGS,
-        NOW,
-    )
-
-    assert second.status == "excluded"
-    assert second.reason == "no_xray_success"
-
-
 def test_preview_transport_failure_preserves_existing_approved_channel() -> None:
     first = evaluate_channel("quality_channel", HEALTHY, None, SETTINGS, NOW)
     approved = evaluate_channel("quality_channel", HEALTHY, first.to_state_record(), SETTINGS, NOW)
@@ -127,8 +101,6 @@ def test_preview_transport_failure_preserves_existing_approved_channel() -> None
         supported_candidates=0,
         static_accepted=0,
         unique_profiles=0,
-        xray_passed=0,
-        xray_failed=0,
     )
 
     result = evaluate_channel(
@@ -142,3 +114,35 @@ def test_preview_transport_failure_preserves_existing_approved_channel() -> None
     assert result.status == "approved"
     assert result.reason == "preview_unavailable"
     assert result.evidence_runs == approved.evidence_runs
+
+
+def test_channel_quality_metrics_do_not_expose_xray_results() -> None:
+    assert "xray_passed" not in ChannelMetrics.__dataclass_fields__
+    assert "xray_failed" not in ChannelMetrics.__dataclass_fields__
+
+
+def test_legacy_xray_state_is_discarded_for_content_quality_migration(tmp_path: Path) -> None:
+    state_path = tmp_path / "channel_state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "channels": {
+                    sha256(b"legacy").hexdigest(): {
+                        "status": "excluded",
+                        "score": 40.0,
+                        "reason": "no_xray_success",
+                        "evidence_runs": 2,
+                        "alpha_success": 1,
+                        "beta_failure": 5,
+                        "first_seen_at": "2026-08-15T00:00:00Z",
+                        "last_seen_at": "2026-08-15T00:00:00Z",
+                        "last_evaluated_at": "2026-08-15T00:00:00Z",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_channel_state(state_path) == {}

@@ -14,7 +14,6 @@ paths:
   output_dir: custom-output
   report: custom-report.json
   state: custom-state.json
-  xray_path: /opt/xray/xray
 sources:
   max_age_hours: 24
   concurrency: 12
@@ -40,28 +39,9 @@ channel_quality:
 static_filter:
   workers: 6
   batch_size: 128
-ip_validation:
-  ip_echo_urls:
-    - https://ifconfig.example/ip
-    - https://ip.example/address
-  http_check_urls:
-    - https://status.example/generate_204
-  accepted_http_statuses: [200, 204, 301, 302, 307]
-  timeout_seconds: 1.25
-  config_test_timeout_seconds: 10.0
-  startup_timeout_seconds: 2.5
-  request_concurrency: 16
-  batch_size: 64
-  batch_concurrency: 3
-  listener_poll_interval_seconds: 0.05
-  process_shutdown_timeout_seconds: 0.3
-  connection_max_connections: 2
-  connection_max_keepalive_connections: 1
 behavior:
   strict_first_seen: true
   fail_on_empty: false
-xray:
-  version: v26.3.27
 """.lstrip()
         + extra,
         encoding="utf-8",
@@ -78,7 +58,6 @@ def test_load_config_reads_all_runtime_settings(tmp_path: Path) -> None:
     assert config.paths.output_dir == Path("custom-output")
     assert config.paths.report_path == Path("custom-report.json")
     assert config.paths.state_path == Path("custom-state.json")
-    assert config.paths.xray_path == Path("/opt/xray/xray")
     assert config.sources.max_age_hours == 24
     assert config.sources.concurrency == 12
     assert config.sources.timeout_seconds == 15.0
@@ -87,25 +66,8 @@ def test_load_config_reads_all_runtime_settings(tmp_path: Path) -> None:
     assert config.sources.user_agent == "collector-test/1.0"
     assert config.static_filter.workers == 6
     assert config.static_filter.batch_size == 128
-    assert config.ip_validation.ip_echo_urls == (
-        "https://ifconfig.example/ip",
-        "https://ip.example/address",
-    )
-    assert config.ip_validation.http_check_urls == ("https://status.example/generate_204",)
-    assert config.ip_validation.accepted_http_statuses == (200, 204, 301, 302, 307)
-    assert config.ip_validation.timeout_seconds == 1.25
-    assert config.ip_validation.config_test_timeout_seconds == 10.0
-    assert config.ip_validation.startup_timeout_seconds == 2.5
-    assert config.ip_validation.request_concurrency == 16
-    assert config.ip_validation.batch_size == 64
-    assert config.ip_validation.batch_concurrency == 3
-    assert config.ip_validation.listener_poll_interval_seconds == 0.05
-    assert config.ip_validation.process_shutdown_timeout_seconds == 0.3
-    assert config.ip_validation.connection_max_connections == 2
-    assert config.ip_validation.connection_max_keepalive_connections == 1
     assert config.behavior.strict_first_seen is True
     assert config.behavior.fail_on_empty is False
-    assert config.xray.version == "v26.3.27"
 
 
 def test_load_config_rejects_missing_or_invalid_required_values(tmp_path: Path) -> None:
@@ -164,4 +126,24 @@ def test_load_config_rejects_telegram_window_larger_than_72_hours(tmp_path: Path
     )
 
     with pytest.raises(ConfigError, match="telegram.max_post_age_hours"):
+        load_config(config_path)
+
+
+def test_config_schema_does_not_expose_xray_or_ip_validation(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+
+    config = load_config(config_path)
+
+    assert not hasattr(config.paths, "xray_path")
+    assert not hasattr(config, "ip_validation")
+    assert not hasattr(config, "xray")
+
+
+@pytest.mark.parametrize("retired_section", ["ip_validation", "xray"])
+def test_load_config_rejects_retired_xray_sections(tmp_path: Path, retired_section: str) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path, f"\n{retired_section}: {{}}\n")
+
+    with pytest.raises(ConfigError, match="неизвестные параметры"):
         load_config(config_path)

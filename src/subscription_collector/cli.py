@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -28,11 +28,10 @@ from .fetcher import (
     fetch_telegram_previews,
 )
 from .input_reader import InputError, read_input_urls
-from .models import ProbeResult, Profile, RunStats
+from .models import Profile, RunStats
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
-from .probe import probe_batch
 from .report import build_report
 from .state import update_state
 from .telegram import extract_profile_uris, extract_telegram_handles, parse_preview_posts
@@ -80,54 +79,6 @@ def _parse_and_filter_candidate(
     return decision.profile, True, None
 
 
-async def _validate_profiles(
-    profiles: Sequence[Profile],
-    *,
-    batch_runner: Callable[[Sequence[Profile]], Awaitable[Sequence[ProbeResult]]],
-    batch_concurrency: int,
-    batch_size: int,
-    stats: RunStats,
-) -> list[Profile]:
-    """Run bounded Xray batches and return only profiles with a successful public-IP response."""
-    if batch_concurrency < 1:
-        raise ValueError("probe_batch_concurrency must be positive")
-    if batch_size < 1:
-        raise ValueError("probe_batch_size must be positive")
-
-    batches = [
-        profiles[start : start + batch_size] for start in range(0, len(profiles), batch_size)
-    ]
-    semaphore = asyncio.Semaphore(batch_concurrency)
-
-    async def validate_batch(
-        batch_index: int, batch: Sequence[Profile]
-    ) -> tuple[int, Sequence[Profile], list[ProbeResult]]:
-        async with semaphore:
-            try:
-                results = list(await batch_runner(batch))
-            except BaseException as exc:
-                if isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
-                    raise
-                results = [ProbeResult(False, 0, None, "batch_runner_error") for _ in batch]
-            if len(results) != len(batch):
-                results = [ProbeResult(False, 0, None, "batch_result_mismatch") for _ in batch]
-            return batch_index, batch, results
-
-    completed_batches = await asyncio.gather(
-        *(validate_batch(index, batch) for index, batch in enumerate(batches))
-    )
-    accepted: list[Profile] = []
-    for _, batch, results in sorted(completed_batches, key=lambda item: item[0]):
-        for profile, result in zip(batch, results, strict=True):
-            stats.probed_profiles += 1
-            if result.passed:
-                accepted.append(profile)
-                stats.validated_profiles += 1
-            else:
-                stats.exclude(result.error_category or "ip_validation_failed")
-    return accepted
-
-
 def _parse_channel_profiles(
     raw_uris: Sequence[str],
     source_url: str,
@@ -157,14 +108,13 @@ def _parse_channel_profiles(
 async def run_collection(
     *, config: CollectorConfig, client: httpx.AsyncClient | None = None
 ) -> int:
-    """Discover public channels from seeds and publish only quality-gated Xray profiles."""
+    """Discover public channels from seeds and publish quality-gated secure profiles."""
     started_at = datetime.now(UTC)
     monotonic_started_at = perf_counter()
     stats = RunStats()
     paths = config.paths
     source_settings = config.sources
     telegram_settings = config.telegram
-    validation_settings = config.ip_validation
     behavior = config.behavior
 
     logger.info("Конвейер Telegram-профилей: запуск.")
@@ -227,12 +177,8 @@ async def run_collection(
         logger.info("Этап «Discovery Telegram»: обнаружено каналов: %d.", len(discovered_handles))
 
         channel_state = load_channel_state(telegram_settings.state_path)
-        active_handles = [
-            handle
-            for handle in sorted(discovered_handles)
-            if channel_state.get(channel_state_key(handle), None) is None
-            or channel_state[channel_state_key(handle)].status != "excluded"
-        ]
+        # Content quality can change, so a prior exclusion must not permanently block re-evaluation.
+        active_handles = sorted(discovered_handles)
         preview_started_at = perf_counter()
         previews = await fetch_telegram_previews(
             active_handles,
@@ -341,40 +287,9 @@ async def run_collection(
     stats.unique_profiles = len(unique)
     _stage_duration_ms(stats, "deduplication", deduplication_started_at)
 
-    validation_started_at = perf_counter()
-    excluded_before_validation = stats.excluded.copy()
-    logger.info("Этап «Xray IP-проверка»: начат — профилей: %d.", len(unique))
-
-    async def run_probe_batch(batch: Sequence[Profile]) -> list[ProbeResult]:
-        return await probe_batch(batch, paths.xray_path, settings=validation_settings)
-
-    validated = await _validate_profiles(
-        unique,
-        batch_runner=run_probe_batch,
-        batch_concurrency=validation_settings.batch_concurrency,
-        batch_size=validation_settings.batch_size,
-        stats=stats,
-    )
-    _stage_duration_ms(stats, "xray_ip_validation", validation_started_at)
-    validation_failures = {
-        reason: count - excluded_before_validation.get(reason, 0)
-        for reason, count in stats.excluded.items()
-        if count > excluded_before_validation.get(reason, 0)
-    }
-    if validation_failures:
-        summary = ", ".join(
-            f"{reason}: {count}" for reason, count in sorted(validation_failures.items())
-        )
-        logger.info("Причины отказов Xray IP-проверки: %s.", summary)
-    validated_fingerprints = {profile_fingerprint(profile) for profile in validated}
-
     evaluation_started_at = perf_counter()
     evaluations = {}
     for handle in active_handles:
-        local_profiles = channel_profiles[handle]
-        xray_passed = sum(
-            profile_fingerprint(profile) in validated_fingerprints for profile in local_profiles
-        )
         metrics = channel_metrics[handle]
         evaluation = evaluate_channel(
             handle,
@@ -385,8 +300,6 @@ async def run_collection(
                 supported_candidates=int(metrics["supported_candidates"]),
                 static_accepted=int(metrics["static_accepted"]),
                 unique_profiles=int(metrics["unique_profiles"]),
-                xray_passed=xray_passed,
-                xray_failed=len(local_profiles) - xray_passed,
             ),
             channel_state.get(channel_state_key(handle)),
             config.channel_quality,
@@ -413,12 +326,10 @@ async def run_collection(
     )
 
     approved_handles = {
-        handle
-        for handle, evaluation in evaluations.items()
-        if evaluation.status == "approved"
+        handle for handle, evaluation in evaluations.items() if evaluation.status == "approved"
     }
     approved_source_urls = {channel_sources[handle] for handle in approved_handles}
-    profiles = [profile for profile in validated if profile.source_url in approved_source_urls]
+    profiles = [profile for profile in unique if profile.source_url in approved_source_urls]
 
     publication_started_at = perf_counter()
     fingerprints_by_profile_id = {id(profile): profile_fingerprint(profile) for profile in profiles}
@@ -480,7 +391,10 @@ async def run_collection(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Collect and Xray-validate secure VLESS, Trojan and Hysteria2 profiles"
+        description=(
+            "Collect secure VLESS, Trojan and Hysteria2 profiles "
+            "from quality-gated public Telegram channels"
+        )
     )
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
     parser.add_argument("--input", type=Path)
@@ -490,16 +404,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-age-hours", type=int)
     parser.add_argument("--strict-first-seen", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--fail-on-empty", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--xray-path", type=Path)
-    parser.add_argument("--probe-timeout-seconds", type=float)
-    parser.add_argument("--probe-startup-timeout-seconds", type=float)
-    parser.add_argument("--probe-concurrency", type=int)
-    parser.add_argument("--probe-batch-size", type=int)
-    parser.add_argument("--probe-batch-concurrency", type=int)
-    parser.add_argument("--probe-listener-poll-interval-seconds", type=float)
-    parser.add_argument("--probe-process-shutdown-timeout-seconds", type=float)
-    parser.add_argument("--probe-connection-max-connections", type=int)
-    parser.add_argument("--probe-connection-max-keepalive-connections", type=int)
     parser.add_argument("--source-concurrency", type=int)
     parser.add_argument("--source-timeout-seconds", type=float)
     parser.add_argument("--source-max-response-bytes", type=int)
@@ -519,7 +423,6 @@ def _apply_cli_overrides(config: CollectorConfig, args: argparse.Namespace) -> C
             output_dir=args.output_dir or config.paths.output_dir,
             report_path=args.report or config.paths.report_path,
             state_path=args.state or config.paths.state_path,
-            xray_path=args.xray_path or config.paths.xray_path,
         ),
         sources=replace(
             config.sources,
@@ -538,35 +441,6 @@ def _apply_cli_overrides(config: CollectorConfig, args: argparse.Namespace) -> C
             config.static_filter,
             workers=args.analysis_workers or config.static_filter.workers,
             batch_size=args.analysis_batch_size or config.static_filter.batch_size,
-        ),
-        ip_validation=replace(
-            config.ip_validation,
-            timeout_seconds=args.probe_timeout_seconds or config.ip_validation.timeout_seconds,
-            startup_timeout_seconds=(
-                args.probe_startup_timeout_seconds or config.ip_validation.startup_timeout_seconds
-            ),
-            request_concurrency=args.probe_concurrency or config.ip_validation.request_concurrency,
-            batch_size=args.probe_batch_size or config.ip_validation.batch_size,
-            batch_concurrency=(
-                args.probe_batch_concurrency or config.ip_validation.batch_concurrency
-            ),
-            listener_poll_interval_seconds=(
-                args.probe_listener_poll_interval_seconds
-                or config.ip_validation.listener_poll_interval_seconds
-            ),
-            process_shutdown_timeout_seconds=(
-                args.probe_process_shutdown_timeout_seconds
-                or config.ip_validation.process_shutdown_timeout_seconds
-            ),
-            connection_max_connections=(
-                args.probe_connection_max_connections
-                or config.ip_validation.connection_max_connections
-            ),
-            connection_max_keepalive_connections=(
-                args.probe_connection_max_keepalive_connections
-                if args.probe_connection_max_keepalive_connections is not None
-                else config.ip_validation.connection_max_keepalive_connections
-            ),
         ),
         behavior=replace(
             config.behavior,

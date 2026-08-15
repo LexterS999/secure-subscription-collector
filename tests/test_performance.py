@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 import httpx
 
 from subscription_collector import cli, dedup
-from subscription_collector.models import ProbeResult
 from subscription_collector.parser import parse_profile
 
 TROJAN_TLS = (
@@ -18,7 +17,7 @@ TROJAN_TLS = (
 def test_collection_reuses_each_profile_fingerprint_after_deduplication(
     tmp_path, monkeypatch, config_for
 ) -> None:
-    """Catches repeated JSON serialization and SHA-256 work after deduplication."""
+    """Catches repeated fingerprint work after the exact-deduplication boundary."""
     original_fingerprint = cli.profile_fingerprint
     calls = 0
 
@@ -26,11 +25,6 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
         nonlocal calls
         calls += 1
         return original_fingerprint(profile)
-
-    async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
-        return [ProbeResult(True, 1, 8) for _ in profiles]
-
-    monkeypatch.setattr(cli, "probe_batch", validated)
 
     async def exercise() -> tuple[int, str]:
         input_path = tmp_path / "input.txt"
@@ -43,20 +37,23 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
         published_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         preview = (
             '<div class="tgme_widget_message" data-post="quality_channel/20">'
-            f'<div class="tgme_widget_message_text">{TROJAN_TLS}\n{second}</div>'
+            f'<div class="tgme_widget_message_text">{TROJAN_TLS}</div>'
+            f'<time datetime="{published_at}"></time></div>'
+            '<div class="tgme_widget_message" data-post="quality_channel/19">'
+            f'<div class="tgme_widget_message_text">{second}</div>'
             f'<time datetime="{published_at}"></time></div>'
         )
 
         def handler(request: httpx.Request) -> httpx.Response:
-            text = seed if request.url.host == "source.example" else preview
-            return httpx.Response(200, text=text)
+            return httpx.Response(
+                200, text=seed if request.url.host == "source.example" else preview
+            )
 
         config = config_for(
             input_path=input_path,
             output_dir=output_dir,
             report_path=report_path,
             state_path=state_path,
-            xray_path=tmp_path / "xray",
         )
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             await cli.run_collection(config=config, client=client)
@@ -68,7 +65,7 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
 
     assert code == 0
     assert output.count("TR-TLS-TCP-") == 2
-    assert calls <= 16
+    assert calls <= 12
 
 
 def test_deduplication_uses_exact_fingerprint_without_redundant_compatibility_groups(
@@ -81,11 +78,11 @@ def test_deduplication_uses_exact_fingerprint_without_redundant_compatibility_gr
         "?type=tcp&fp=chrome&sni=www.example.com&security=tls#another-name",
         "https://source.example/list",
     )
+
     assert first is not None and duplicate is not None
 
     def fail_if_called(_profile):
         raise AssertionError("Неиспользуемая compatibility-группировка не должна вызываться")
 
     monkeypatch.setattr(dedup, "client_compatibility_key", fail_if_called)
-
     assert dedup.deduplicate([first, duplicate]) == [first]

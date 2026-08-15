@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 import yaml
 
@@ -40,7 +39,6 @@ class PathsConfig:
     output_dir: Path
     report_path: Path
     state_path: Path
-    xray_path: Path
 
 
 @dataclass(frozen=True)
@@ -81,31 +79,9 @@ class StaticFilterConfig:
 
 
 @dataclass(frozen=True)
-class IpValidationConfig:
-    ip_echo_urls: tuple[str, ...]
-    http_check_urls: tuple[str, ...]
-    accepted_http_statuses: tuple[int, ...]
-    timeout_seconds: float
-    config_test_timeout_seconds: float
-    startup_timeout_seconds: float
-    request_concurrency: int
-    batch_size: int
-    batch_concurrency: int
-    listener_poll_interval_seconds: float
-    process_shutdown_timeout_seconds: float
-    connection_max_connections: int
-    connection_max_keepalive_connections: int
-
-
-@dataclass(frozen=True)
 class BehaviorConfig:
     strict_first_seen: bool
     fail_on_empty: bool
-
-
-@dataclass(frozen=True)
-class XrayConfig:
-    version: str
 
 
 @dataclass(frozen=True)
@@ -115,9 +91,7 @@ class CollectorConfig:
     telegram: TelegramConfig
     channel_quality: ChannelQualityConfig
     static_filter: StaticFilterConfig
-    ip_validation: IpValidationConfig
     behavior: BehaviorConfig
-    xray: XrayConfig
 
 
 def _mapping(value: Any, location: str) -> dict[str, Any]:
@@ -166,48 +140,14 @@ def _boolean(section: dict[str, Any], key: str, location: str) -> bool:
     return value
 
 
-def _https_url_value(value: Any, location: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"{location} должен быть непустым HTTPS-адресом")
-    parsed = urlsplit(value)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise ConfigError(f"{location} должен быть HTTPS-адресом")
-    return value
-
-
-def _https_urls(section: dict[str, Any], key: str, location: str) -> tuple[str, ...]:
-    value = section[key]
-    if not isinstance(value, list) or not value:
-        raise ConfigError(f"{location}.{key} должен быть непустым YAML-списком HTTPS-адресов")
-    urls = tuple(_https_url_value(item, f"{location}.{key}") for item in value)
-    if len(set(urls)) != len(urls):
-        raise ConfigError(f"{location}.{key} не должен содержать повторяющиеся HTTPS-адреса")
-    return urls
-
-
-def _http_statuses(section: dict[str, Any], key: str, location: str) -> tuple[int, ...]:
-    value = section[key]
-    if not isinstance(value, list) or not value:
-        raise ConfigError(f"{location}.{key} должен быть непустым YAML-списком HTTP-кодов")
-    statuses: list[int] = []
-    for item in value:
-        if isinstance(item, bool) or not isinstance(item, int) or not 100 <= item <= 599:
-            raise ConfigError(f"{location}.{key} должен содержать HTTP-коды от 100 до 599")
-        statuses.append(item)
-    if len(set(statuses)) != len(statuses):
-        raise ConfigError(f"{location}.{key} не должен содержать повторяющиеся HTTP-коды")
-    return tuple(statuses)
-
-
 def _paths_config(payload: dict[str, Any]) -> PathsConfig:
     section = _mapping(payload["paths"], "paths")
-    _check_keys(section, "paths", {"input", "output_dir", "report", "state", "xray_path"})
+    _check_keys(section, "paths", {"input", "output_dir", "report", "state"})
     return PathsConfig(
         input_path=Path(_string(section, "input", "paths")),
         output_dir=Path(_string(section, "output_dir", "paths")),
         report_path=Path(_string(section, "report", "paths")),
         state_path=Path(_string(section, "state", "paths")),
-        xray_path=Path(_string(section, "xray_path", "paths")),
     )
 
 
@@ -302,56 +242,6 @@ def _static_filter_config(payload: dict[str, Any]) -> StaticFilterConfig:
     )
 
 
-def _ip_validation_config(payload: dict[str, Any]) -> IpValidationConfig:
-    section = _mapping(payload["ip_validation"], "ip_validation")
-    _check_keys(
-        section,
-        "ip_validation",
-        {
-            "ip_echo_urls",
-            "http_check_urls",
-            "accepted_http_statuses",
-            "timeout_seconds",
-            "config_test_timeout_seconds",
-            "startup_timeout_seconds",
-            "request_concurrency",
-            "batch_size",
-            "batch_concurrency",
-            "listener_poll_interval_seconds",
-            "process_shutdown_timeout_seconds",
-            "connection_max_connections",
-            "connection_max_keepalive_connections",
-        },
-    )
-    return IpValidationConfig(
-        ip_echo_urls=_https_urls(section, "ip_echo_urls", "ip_validation"),
-        http_check_urls=_https_urls(section, "http_check_urls", "ip_validation"),
-        accepted_http_statuses=_http_statuses(section, "accepted_http_statuses", "ip_validation"),
-        timeout_seconds=_number(section, "timeout_seconds", "ip_validation", 0.000001),
-        config_test_timeout_seconds=_number(
-            section, "config_test_timeout_seconds", "ip_validation", 0.000001
-        ),
-        startup_timeout_seconds=_number(
-            section, "startup_timeout_seconds", "ip_validation", 0.000001
-        ),
-        request_concurrency=_integer(section, "request_concurrency", "ip_validation", 1),
-        batch_size=_integer(section, "batch_size", "ip_validation", 1),
-        batch_concurrency=_integer(section, "batch_concurrency", "ip_validation", 1),
-        listener_poll_interval_seconds=_number(
-            section, "listener_poll_interval_seconds", "ip_validation", 0.000001
-        ),
-        process_shutdown_timeout_seconds=_number(
-            section, "process_shutdown_timeout_seconds", "ip_validation", 0.000001
-        ),
-        connection_max_connections=_integer(
-            section, "connection_max_connections", "ip_validation", 1
-        ),
-        connection_max_keepalive_connections=_integer(
-            section, "connection_max_keepalive_connections", "ip_validation", 0
-        ),
-    )
-
-
 def _behavior_config(payload: dict[str, Any]) -> BehaviorConfig:
     section = _mapping(payload["behavior"], "behavior")
     _check_keys(section, "behavior", {"strict_first_seen", "fail_on_empty"})
@@ -359,12 +249,6 @@ def _behavior_config(payload: dict[str, Any]) -> BehaviorConfig:
         strict_first_seen=_boolean(section, "strict_first_seen", "behavior"),
         fail_on_empty=_boolean(section, "fail_on_empty", "behavior"),
     )
-
-
-def _xray_config(payload: dict[str, Any]) -> XrayConfig:
-    section = _mapping(payload["xray"], "xray")
-    _check_keys(section, "xray", {"version"})
-    return XrayConfig(version=_string(section, "version", "xray"))
 
 
 def validate_config(config: CollectorConfig) -> CollectorConfig:
@@ -375,7 +259,6 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "output_dir": str(config.paths.output_dir),
             "report": str(config.paths.report_path),
             "state": str(config.paths.state_path),
-            "xray_path": str(config.paths.xray_path),
         },
         "sources": {
             "max_age_hours": config.sources.max_age_hours,
@@ -406,39 +289,17 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "workers": config.static_filter.workers,
             "batch_size": config.static_filter.batch_size,
         },
-        "ip_validation": {
-            "ip_echo_urls": list(config.ip_validation.ip_echo_urls),
-            "http_check_urls": list(config.ip_validation.http_check_urls),
-            "accepted_http_statuses": list(config.ip_validation.accepted_http_statuses),
-            "timeout_seconds": config.ip_validation.timeout_seconds,
-            "config_test_timeout_seconds": config.ip_validation.config_test_timeout_seconds,
-            "startup_timeout_seconds": config.ip_validation.startup_timeout_seconds,
-            "request_concurrency": config.ip_validation.request_concurrency,
-            "batch_size": config.ip_validation.batch_size,
-            "batch_concurrency": config.ip_validation.batch_concurrency,
-            "listener_poll_interval_seconds": config.ip_validation.listener_poll_interval_seconds,
-            "process_shutdown_timeout_seconds": (
-                config.ip_validation.process_shutdown_timeout_seconds
-            ),
-            "connection_max_connections": config.ip_validation.connection_max_connections,
-            "connection_max_keepalive_connections": (
-                config.ip_validation.connection_max_keepalive_connections
-            ),
-        },
         "behavior": {
             "strict_first_seen": config.behavior.strict_first_seen,
             "fail_on_empty": config.behavior.fail_on_empty,
         },
-        "xray": {"version": config.xray.version},
     }
     _paths_config(payload)
     _sources_config(payload)
     _telegram_config(payload)
     _channel_quality_config(payload)
     _static_filter_config(payload)
-    _ip_validation_config(payload)
     _behavior_config(payload)
-    _xray_config(payload)
     return config
 
 
@@ -460,9 +321,7 @@ def load_config(path: Path) -> CollectorConfig:
             "telegram",
             "channel_quality",
             "static_filter",
-            "ip_validation",
             "behavior",
-            "xray",
         },
     )
     return validate_config(
@@ -472,8 +331,6 @@ def load_config(path: Path) -> CollectorConfig:
             telegram=_telegram_config(root),
             channel_quality=_channel_quality_config(root),
             static_filter=_static_filter_config(root),
-            ip_validation=_ip_validation_config(root),
             behavior=_behavior_config(root),
-            xray=_xray_config(root),
         )
     )

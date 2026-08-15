@@ -9,7 +9,7 @@ from typing import Any
 from .channel_quality import ChannelEvaluation, ChannelStateRecord
 from .writer import write_json_atomic, write_text_atomic
 
-_STATE_VERSION = 1
+_STATE_VERSION = 2
 _VALID_STATUSES = {"candidate", "approved", "excluded"}
 
 
@@ -30,8 +30,6 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         "score",
         "reason",
         "evidence_runs",
-        "alpha_success",
-        "beta_failure",
         "first_seen_at",
         "last_seen_at",
         "last_evaluated_at",
@@ -44,12 +42,10 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         or not 0 <= float(value["score"]) <= 100
     ):
         return None
-    integer_fields = ("evidence_runs", "alpha_success", "beta_failure")
-    if any(
-        isinstance(value[field], bool)
-        or not isinstance(value[field], int)
-        or value[field] < 1
-        for field in integer_fields
+    if (
+        isinstance(value["evidence_runs"], bool)
+        or not isinstance(value["evidence_runs"], int)
+        or value["evidence_runs"] < 1
     ):
         return None
     string_fields = ("reason", "first_seen_at", "last_seen_at", "last_evaluated_at")
@@ -60,8 +56,6 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         score=round(float(value["score"]), 2),
         reason=value["reason"],
         evidence_runs=value["evidence_runs"],
-        alpha_success=value["alpha_success"],
-        beta_failure=value["beta_failure"],
         first_seen_at=value["first_seen_at"],
         last_seen_at=value["last_seen_at"],
         last_evaluated_at=value["last_evaluated_at"],
@@ -69,7 +63,7 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
 
 
 def load_channel_state(path: Path) -> dict[str, ChannelStateRecord]:
-    """Load valid redacted channel state; corrupt or absent state is treated as empty."""
+    """Load current redacted state; records from prior schema versions are discarded."""
     try:
         import json
 
@@ -117,8 +111,6 @@ def update_channel_state(
                 "score": record.score,
                 "reason": record.reason,
                 "evidence_runs": record.evidence_runs,
-                "alpha_success": record.alpha_success,
-                "beta_failure": record.beta_failure,
                 "first_seen_at": record.first_seen_at,
                 "last_seen_at": record.last_seen_at,
                 "last_evaluated_at": record.last_evaluated_at,
