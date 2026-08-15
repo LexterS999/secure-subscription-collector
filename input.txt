@@ -4,6 +4,9 @@ https://raw.githubusercontent.com/luxxuria/harvester/refs/heads/main/ping_tested
 https://raw.githubusercontent.com/rtwo2/FastNodes/main/sub/everything.txt
 https://raw.githubusercontent.com/YawStar/Proxy-Hunter/refs/heads/main/configs/proxy_configs.txt
 https://raw.githubusercontent.com/Alirewa/V2ray-Configs/main/config.txt
+https://raw.githubusercontent.com/Surfboardv2ray/TGParse/main/splitted/mixed
+https://raw.githubusercontent.com/wlunlocker/vpn-configs/main/blacklist_all.txt
+https://raw.githubusercontent.com/wlunlocker/vpn-configs/main/whitelist_all.txt
 https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt
 https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/trojan.txt
 https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/other.txt
@@ -16,3 +19,5 @@ https://raw.githubusercontent.com/anonymouskeys/Free-configs-/main/output/transp
 https://raw.githubusercontent.com/anonymouskeys/Free-configs-/main/output/protocol/hysteria2.txt
 https://raw.githubusercontent.com/anonymouskeys/Free-configs-/main/output/protocol/hysteria.txt
 https://github.com/Au1rxx/free-vpn-subscriptions/raw/main/output/v2ray-base64.txt
+https://raw.githubusercontent.com/nukcrow/black-crow/refs/heads/main/sub/protocols/vless.txt
+https://raw.githubusercontent.com/nukcrow/black-crow/refs/heads/main/sub/protocols/trojan.txt
