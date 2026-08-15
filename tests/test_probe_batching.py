@@ -57,16 +57,16 @@ def test_validation_limits_concurrent_xray_batches_and_keeps_all_results() -> No
     assert accepted_count == 10
 
 
-def test_command_defaults_use_only_xray_with_high_throughput_batching() -> None:
-    """Catches slow defaults or any reintroduction of a separate TCP precheck interface."""
+def test_command_options_defer_throughput_settings_to_config_yaml() -> None:
+    """Catches reintroduction of built-in throughput defaults or a separate TCP precheck."""
 
     args = build_parser().parse_args(["--xray-path", "/tmp/xray"])
 
-    assert args.probe_timeout_seconds == 0.5
-    assert args.probe_startup_timeout_seconds == 0.75
-    assert args.source_concurrency == 48
-    assert args.analysis_workers == 160
-    assert args.analysis_batch_size == 1024
-    assert args.probe_concurrency == 128
-    assert args.probe_batch_size == 512
-    assert args.probe_batch_concurrency == 4
+    assert args.probe_timeout_seconds is None
+    assert args.probe_startup_timeout_seconds is None
+    assert args.source_concurrency is None
+    assert args.analysis_workers is None
+    assert args.analysis_batch_size is None
+    assert args.probe_concurrency is None
+    assert args.probe_batch_size is None
+    assert args.probe_batch_concurrency is None

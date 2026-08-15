@@ -15,7 +15,7 @@ TROJAN_TLS = (
 
 
 def test_collection_reuses_each_profile_fingerprint_after_deduplication(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, config_for
 ) -> None:
     """Catches repeated JSON serialization and SHA-256 work after deduplication."""
     original_fingerprint = cli.profile_fingerprint
@@ -43,14 +43,13 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             code = await cli.run_collection(
-                input_path=input_path,
-                output_dir=output_dir,
-                report_path=report_path,
-                state_path=state_path,
-                max_age_hours=72,
-                strict_first_seen=False,
-                fail_on_empty=False,
-                xray_path=tmp_path / "xray",
+                config=config_for(
+                    input_path=input_path,
+                    output_dir=output_dir,
+                    report_path=report_path,
+                    state_path=state_path,
+                    xray_path=tmp_path / "xray",
+                ),
                 client=client,
             )
         return code, (output_dir / "trojan.txt").read_text(encoding="utf-8")

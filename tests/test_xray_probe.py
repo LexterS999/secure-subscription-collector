@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,9 @@ def test_is_public_ip_response_accepts_global_ip_literal() -> None:
     assert is_public_ip_response(" 1.1.1.1\n") is True
 
 
-def test_probe_profile_closes_xray_listener_after_failed_request(tmp_path, monkeypatch) -> None:
+def test_probe_profile_closes_xray_listener_after_failed_request(
+    tmp_path, monkeypatch, config_for
+) -> None:
     """Catches an Xray child process or loopback listener left alive after a failed probe."""
     import asyncio
     import os
@@ -52,15 +55,14 @@ def test_probe_profile_closes_xray_listener_after_failed_request(tmp_path, monke
     )
     assert profile is not None
 
-    result = asyncio.run(
-        probe.probe_profile(
-            profile,
-            Path(xray_path),
-            ip_echo_url="http://127.0.0.1:1",
-            timeout_seconds=1,
-            startup_timeout_seconds=2,
-        )
+    settings = replace(
+        config_for().ip_validation,
+        ip_echo_urls=("https://127.0.0.1:1",),
+        http_check_urls=("https://127.0.0.1:1",),
+        timeout_seconds=1,
+        startup_timeout_seconds=2,
     )
+    result = asyncio.run(probe.probe_profile(profile, Path(xray_path), settings=settings))
 
     assert result.passed is False
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as verifier:
@@ -69,7 +71,7 @@ def test_probe_profile_closes_xray_listener_after_failed_request(tmp_path, monke
 
 
 def test_probe_profile_returns_fail_closed_result_when_xray_exits_before_listener(
-    tmp_path,
+    tmp_path, config_for
 ) -> None:
     """Catches an early Xray exit escaping from a single failed profile into the workflow."""
     import asyncio
@@ -90,16 +92,15 @@ def test_probe_profile_returns_fail_closed_result_when_xray_exits_before_listene
     )
     failing_xray.chmod(0o755)
 
-    result = asyncio.run(
-        probe_profile(profile, failing_xray, timeout_seconds=0.1, startup_timeout_seconds=0.2)
-    )
+    settings = replace(config_for().ip_validation, timeout_seconds=0.1, startup_timeout_seconds=0.2)
+    result = asyncio.run(probe_profile(profile, failing_xray, settings=settings))
 
     assert result.passed is False
     assert result.error_category == "process_exited"
 
 
 def test_probe_batch_returns_fail_closed_results_when_xray_exits_before_listeners(
-    tmp_path,
+    tmp_path, config_for
 ) -> None:
     """Catches a failed batch process cancelling the complete collection task."""
     import asyncio
@@ -127,13 +128,17 @@ def test_probe_batch_returns_fail_closed_results_when_xray_exits_before_listener
     )
     failing_xray.chmod(0o755)
 
+    settings = replace(
+        config_for().ip_validation,
+        timeout_seconds=0.1,
+        startup_timeout_seconds=0.2,
+        request_concurrency=2,
+    )
     results = asyncio.run(
         probe_batch(
             [profile for profile in profiles if profile is not None],
             failing_xray,
-            timeout_seconds=0.1,
-            startup_timeout_seconds=0.2,
-            request_concurrency=2,
+            settings=settings,
         )
     )
 
@@ -142,3 +147,35 @@ def test_probe_batch_returns_fail_closed_results_when_xray_exits_before_listener
         "process_exited",
         "process_exited",
     ]
+
+
+def test_probe_uses_dedicated_timeout_for_xray_config_validation(tmp_path, config_for) -> None:
+    """Catches reusing listener startup timeout for a slower Xray JSON validation command."""
+    import asyncio
+
+    from subscription_collector.parser import parse_profile
+    from subscription_collector.probe import probe_profile
+
+    profile = parse_profile(
+        "trojan://correct-horse@node.example.org:443"
+        "?security=tls&sni=www.example.com&fp=chrome&type=tcp",
+        "https://source.example/list",
+    )
+    assert profile is not None
+    delayed_test_xray = tmp_path / "xray"
+    delayed_test_xray.write_text(
+        '#!/bin/sh\nif [ "$2" = "-test" ]; then sleep 0.05; exit 0; fi\nexit 23\n',
+        encoding="utf-8",
+    )
+    delayed_test_xray.chmod(0o755)
+
+    settings = replace(
+        config_for().ip_validation,
+        config_test_timeout_seconds=0.2,
+        startup_timeout_seconds=0.01,
+    )
+    result = asyncio.run(probe_profile(profile, delayed_test_xray, settings=settings))
+
+    assert result.passed is False
+    assert result.error_category in {"process_exited", "listener_timeout"}
+    assert result.error_category != "config_invalid"

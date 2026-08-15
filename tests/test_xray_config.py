@@ -342,3 +342,73 @@ def test_large_batch_config_passes_official_xray_syntax_validation(tmp_path) -> 
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+def test_build_xray_config_preserves_tls_and_grpc_compatibility_parameters() -> None:
+    """Catches loss of URI parameters required by TLS and gRPC proxy endpoints."""
+    profile = _profile(
+        "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+        "?encryption=none&security=tls&sni=www.example.com&fp=chrome"
+        "&alpn=h2,http%2F1.1&type=grpc&serviceName=grpc-service"
+        "&authority=grpc.example.com&mode=multi"
+    )
+
+    config = build_xray_config(profile, 19206, "profile")
+
+    stream = config["outbounds"][0]["streamSettings"]
+    assert stream["tlsSettings"]["alpn"] == ["h2", "http/1.1"]
+    assert stream["grpcSettings"] == {
+        "serviceName": "grpc-service",
+        "authority": "grpc.example.com",
+        "multiMode": True,
+    }
+
+
+def test_build_xray_config_preserves_xhttp_compatibility_parameters() -> None:
+    """Catches loss of XHTTP endpoint settings required by modern VLESS share links."""
+    profile = _profile(
+        "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+        "?encryption=none&security=tls&sni=www.example.com&fp=chrome&type=xhttp"
+        "&host=cdn.example.com&path=%2Fapi&mode=stream-up"
+        "&extra=%7B%22xPaddingBytes%22%3A%22100-1000%22%7D"
+    )
+
+    config = build_xray_config(profile, 19207, "profile")
+
+    assert config["outbounds"][0]["streamSettings"]["xhttpSettings"] == {
+        "host": "cdn.example.com",
+        "path": "/api",
+        "mode": "stream-up",
+        "extra": {"xPaddingBytes": "100-1000"},
+    }
+
+
+def test_extended_xhttp_config_passes_official_xray_syntax_validation(tmp_path) -> None:
+    """Catches compatibility fields accepted by unit tests but rejected by the Xray binary."""
+    import json
+    import os
+    import subprocess
+
+    xray_path = os.environ.get("XRAY_TEST_BINARY")
+    if not xray_path:
+        pytest.skip("XRAY_TEST_BINARY is not set")
+    profile = _profile(
+        "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+        "?encryption=none&security=tls&sni=www.example.com&fp=chrome&type=xhttp"
+        "&host=cdn.example.com&path=%2Fapi&mode=stream-up"
+        "&extra=%7B%22xPaddingBytes%22%3A%22100-1000%22%7D"
+    )
+    config_path = tmp_path / "extended-xhttp.json"
+    config_path.write_text(
+        json.dumps(build_xray_config(profile, 19208, "profile")), encoding="utf-8"
+    )
+    config_path.chmod(0o600)
+
+    completed = subprocess.run(
+        [xray_path, "run", "-test", "-c", str(config_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr

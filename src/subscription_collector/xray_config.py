@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 
 from .models import Profile, Protocol
@@ -18,7 +19,20 @@ def _tls_settings(profile: Profile) -> dict[str, object]:
     }
     if fingerprint := profile.params.get("fp"):
         settings["fingerprint"] = fingerprint
+    if alpn := profile.params.get("alpn"):
+        settings["alpn"] = [value.strip() for value in alpn.split(",") if value.strip()]
     return settings
+
+
+def _xhttp_extra(profile: Profile) -> dict[str, object] | None:
+    value = profile.params.get("extra")
+    if not value:
+        return None
+    try:
+        extra = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return extra if isinstance(extra, dict) else None
 
 
 def _transport_settings(profile: Profile) -> dict[str, object]:
@@ -46,7 +60,12 @@ def _transport_settings(profile: Profile) -> dict[str, object]:
             ws_settings["headers"] = {"Host": host}
         stream["wsSettings"] = ws_settings
     elif kind == "grpc":
-        stream["grpcSettings"] = {"serviceName": profile.params.get("servicename", "")}
+        grpc_settings: dict[str, object] = {"serviceName": profile.params.get("servicename", "")}
+        if authority := profile.params.get("authority"):
+            grpc_settings["authority"] = authority
+        if profile.params.get("mode") == "multi" or profile.params.get("multimode") == "true":
+            grpc_settings["multiMode"] = True
+        stream["grpcSettings"] = grpc_settings
     elif kind == "h2":
         stream["network"] = "xhttp"
         stream["xhttpSettings"] = {
@@ -60,7 +79,14 @@ def _transport_settings(profile: Profile) -> dict[str, object]:
             http_upgrade_settings["host"] = host
         stream["httpupgradeSettings"] = http_upgrade_settings
     elif kind == "xhttp":
-        stream["xhttpSettings"] = {"path": profile.params.get("path", "/")}
+        xhttp_settings: dict[str, object] = {"path": profile.params.get("path", "/")}
+        if host := profile.params.get("host"):
+            xhttp_settings["host"] = host
+        if mode := profile.params.get("mode"):
+            xhttp_settings["mode"] = mode
+        if extra := _xhttp_extra(profile):
+            xhttp_settings["extra"] = extra
+        stream["xhttpSettings"] = xhttp_settings
     return stream
 
 

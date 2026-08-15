@@ -12,10 +12,9 @@ from pathlib import Path
 
 import httpx
 
+from .config_loader import IpValidationConfig
 from .models import ProbeResult, Profile
 from .xray_config import build_xray_batch_config
-
-DEFAULT_IP_ECHO_URL = "https://api.ipify.org"
 
 
 def is_public_ip_response(body: str) -> bool:
@@ -56,7 +55,10 @@ def _exception_category(exc: BaseException) -> str:
 
 
 async def _wait_for_listener(
-    port: int, process: asyncio.subprocess.Process, timeout_seconds: float
+    port: int,
+    process: asyncio.subprocess.Process,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -69,15 +71,23 @@ async def _wait_for_listener(
             del reader
             return
         except OSError:
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(poll_interval_seconds)
     raise TimeoutError("listener_timeout")
 
 
 async def _wait_for_listeners(
-    ports: Sequence[int], process: asyncio.subprocess.Process, timeout_seconds: float
+    ports: Sequence[int], process: asyncio.subprocess.Process, settings: IpValidationConfig
 ) -> None:
     outcomes = await asyncio.gather(
-        *(_wait_for_listener(port, process, timeout_seconds) for port in ports),
+        *(
+            _wait_for_listener(
+                port,
+                process,
+                settings.startup_timeout_seconds,
+                settings.listener_poll_interval_seconds,
+            )
+            for port in ports
+        ),
         return_exceptions=True,
     )
     for outcome in outcomes:
@@ -125,7 +135,49 @@ async def _request_public_ip(
     return latency_ms, None
 
 
-async def _stop_process(process: asyncio.subprocess.Process | None) -> None:
+async def _request_http_status(
+    client: httpx.AsyncClient,
+    url: str,
+    timeout_seconds: float,
+    accepted_statuses: tuple[int, ...],
+) -> tuple[int | None, str | None]:
+    started_at = time.monotonic()
+    try:
+        response = await asyncio.wait_for(client.get(url), timeout=timeout_seconds)
+    except (TimeoutError, httpx.TimeoutException):
+        return None, "timeout"
+    except httpx.HTTPError:
+        return None, "http_error"
+    latency_ms = round((time.monotonic() - started_at) * 1000)
+    if response.status_code not in accepted_statuses:
+        return latency_ms, "unexpected_status"
+    return latency_ms, None
+
+
+async def _probe_client(client: httpx.AsyncClient, settings: IpValidationConfig) -> ProbeResult:
+    """Confirm a tunnel with IP echo first, then an independent HTTP response."""
+    errors: list[str] = []
+    for url in settings.ip_echo_urls:
+        latency_ms, error_category = await _request_public_ip(client, url, settings.timeout_seconds)
+        if error_category is None:
+            return ProbeResult(True, 1, latency_ms)
+        errors.append(f"ip_{error_category}")
+
+    for url in settings.http_check_urls:
+        latency_ms, error_category = await _request_http_status(
+            client, url, settings.timeout_seconds, settings.accepted_http_statuses
+        )
+        if error_category is None:
+            return ProbeResult(True, 1, latency_ms)
+        errors.append(f"http_{error_category}")
+
+    category = errors[0] if len(set(errors)) == 1 else "no_endpoint_confirmation"
+    return ProbeResult(False, 0, None, category)
+
+
+async def _stop_process(
+    process: asyncio.subprocess.Process | None, shutdown_timeout_seconds: float
+) -> None:
     if process is None or process.returncode is not None:
         return
     try:
@@ -133,7 +185,7 @@ async def _stop_process(process: asyncio.subprocess.Process | None) -> None:
     except ProcessLookupError:
         return
     try:
-        await asyncio.wait_for(process.wait(), timeout=0.2)
+        await asyncio.wait_for(process.wait(), timeout=shutdown_timeout_seconds)
     except TimeoutError:
         try:
             process.kill()
@@ -143,13 +195,7 @@ async def _stop_process(process: asyncio.subprocess.Process | None) -> None:
 
 
 async def probe_batch(
-    profiles: Sequence[Profile],
-    xray_path: Path,
-    *,
-    ip_echo_url: str = DEFAULT_IP_ECHO_URL,
-    timeout_seconds: float = 0.75,
-    startup_timeout_seconds: float = 1.0,
-    request_concurrency: int = 64,
+    profiles: Sequence[Profile], xray_path: Path, *, settings: IpValidationConfig
 ) -> list[ProbeResult]:
     """Validate a batch through one temporary Xray process with isolated local ports."""
     profile_count = len(profiles)
@@ -157,8 +203,6 @@ async def probe_batch(
         return []
     if not xray_path.is_file():
         return _failed_results(profile_count, "binary_unavailable")
-    if timeout_seconds <= 0 or startup_timeout_seconds <= 0 or request_concurrency < 1:
-        raise ValueError("probe_limits_must_be_positive")
 
     process: asyncio.subprocess.Process | None = None
     temporary_path: Path | None = None
@@ -172,7 +216,9 @@ async def probe_batch(
             temporary_path.chmod(0o600)
             json.dump(config, handle, separators=(",", ":"))
 
-        if not await _run_config_test(xray_path, temporary_path, startup_timeout_seconds):
+        if not await _run_config_test(
+            xray_path, temporary_path, settings.config_test_timeout_seconds
+        ):
             return _failed_results(profile_count, "config_invalid")
 
         process = await asyncio.create_subprocess_exec(
@@ -183,31 +229,26 @@ async def probe_batch(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        await _wait_for_listeners(ports, process, startup_timeout_seconds)
-        semaphore = asyncio.Semaphore(request_concurrency)
+        await _wait_for_listeners(ports, process, settings)
+        semaphore = asyncio.Semaphore(settings.request_concurrency)
 
         async def probe_port(port: int) -> ProbeResult:
             async with semaphore:
                 proxy_url = f"socks5://127.0.0.1:{port}"
-                timeout = httpx.Timeout(timeout_seconds)
+                timeout = httpx.Timeout(settings.timeout_seconds)
                 try:
                     async with httpx.AsyncClient(
                         proxy=proxy_url,
                         timeout=timeout,
                         trust_env=False,
-                        limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
+                        limits=httpx.Limits(
+                            max_connections=settings.connection_max_connections,
+                            max_keepalive_connections=settings.connection_max_keepalive_connections,
+                        ),
                     ) as client:
-                        latency_ms, error_category = await _request_public_ip(
-                            client, ip_echo_url, timeout_seconds
-                        )
+                        return await _probe_client(client, settings)
                 except (OSError, ValueError):
                     return ProbeResult(False, 0, None, "http_error")
-                return ProbeResult(
-                    passed=error_category is None,
-                    successes=1 if error_category is None else 0,
-                    median_latency_ms=latency_ms,
-                    error_category=error_category,
-                )
 
         outcomes = await asyncio.gather(
             *(probe_port(port) for port in ports), return_exceptions=True
@@ -226,27 +267,13 @@ async def probe_batch(
             raise
         return _failed_results(profile_count, _exception_category(exc))
     finally:
-        await _stop_process(process)
+        await _stop_process(process, settings.process_shutdown_timeout_seconds)
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
 
 
 async def probe_profile(
-    profile: Profile,
-    xray_path: Path,
-    *,
-    ip_echo_url: str = DEFAULT_IP_ECHO_URL,
-    timeout_seconds: float = 0.75,
-    startup_timeout_seconds: float = 1.0,
+    profile: Profile, xray_path: Path, *, settings: IpValidationConfig
 ) -> ProbeResult:
     """Validate one profile through the batch implementation for backwards compatibility."""
-    return (
-        await probe_batch(
-            [profile],
-            xray_path,
-            ip_echo_url=ip_echo_url,
-            timeout_seconds=timeout_seconds,
-            startup_timeout_seconds=startup_timeout_seconds,
-            request_concurrency=1,
-        )
-    )[0]
+    return (await probe_batch([profile], xray_path, settings=settings))[0]

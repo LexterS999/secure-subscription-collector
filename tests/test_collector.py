@@ -57,7 +57,7 @@ def test_decoder_excludes_non_approved_schemes(scheme: str) -> None:
     assert extract_candidate_lines(f"{scheme}://example\n") == []
 
 
-def test_fetcher_excludes_source_with_last_modified_older_than_72_hours() -> None:
+def test_fetcher_excludes_source_with_last_modified_older_than_72_hours(config_for) -> None:
     """Catches a missing or off-by-one source freshness exclusion."""
 
     async def exercise() -> None:
@@ -71,7 +71,9 @@ def test_fetcher_excludes_source_with_last_modified_older_than_72_hours() -> Non
             )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            result = await fetch_sources(["https://source.example/list"], client, datetime.now(UTC))
+            result = await fetch_sources(
+                ["https://source.example/list"], client, datetime.now(UTC), config_for().sources
+            )
         assert result[0].freshness is Freshness.STALE
         assert result[0].text is None
 
@@ -86,7 +88,9 @@ def test_fetcher_excludes_source_with_last_modified_older_than_72_hours() -> Non
         ("https://[broken", "redirect_invalid_location"),
     ],
 )
-def test_fetcher_rejects_unsafe_redirect_before_following(location: str, reason: str) -> None:
+def test_fetcher_rejects_unsafe_redirect_before_following(
+    location: str, reason: str, config_for
+) -> None:
     """Catches redirects that would lower transport security or inject malformed credentials."""
 
     async def exercise() -> None:
@@ -98,7 +102,7 @@ def test_fetcher_rejects_unsafe_redirect_before_following(location: str, reason:
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             results = await fetch_sources(
-                ["https://source.example/list"], client, datetime.now(UTC)
+                ["https://source.example/list"], client, datetime.now(UTC), config_for().sources
             )
         assert results[0].freshness is Freshness.FAILED
         assert results[0].reason == reason
@@ -128,7 +132,7 @@ def test_atomic_writer_replaces_previous_contents(tmp_path: Path) -> None:
 
 
 def test_collection_publishes_profile_when_xray_validation_succeeds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_for
 ) -> None:
     """Catches a validation stage that drops a profile despite a positive Xray IP result."""
 
@@ -146,14 +150,7 @@ def test_collection_publishes_profile_when_xray_validation_succeeds(
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await run_collection(
-                input_path=input_path,
-                output_dir=tmp_path / "output",
-                report_path=tmp_path / "report.json",
-                state_path=tmp_path / "state.json",
-                max_age_hours=72,
-                strict_first_seen=False,
-                fail_on_empty=False,
-                xray_path=tmp_path / "xray",
+                config=config_for(input_path=input_path, xray_path=tmp_path / "xray"),
                 client=client,
             )
 
@@ -161,7 +158,7 @@ def test_collection_publishes_profile_when_xray_validation_succeeds(
     assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
 
 
-def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path) -> None:
+def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path, config_for) -> None:
     """Catches publication or state mutation after a failed proxied IP response."""
 
     async def exercise() -> int:
@@ -173,14 +170,7 @@ def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path) 
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await run_collection(
-                input_path=input_path,
-                output_dir=tmp_path / "output",
-                report_path=tmp_path / "report.json",
-                state_path=tmp_path / "state.json",
-                max_age_hours=72,
-                strict_first_seen=False,
-                fail_on_empty=False,
-                xray_path=tmp_path / "missing-xray",
+                config=config_for(input_path=input_path, xray_path=tmp_path / "missing-xray"),
                 client=client,
             )
 

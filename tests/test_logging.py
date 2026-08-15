@@ -17,7 +17,7 @@ TROJAN_TLS = (
 
 
 def test_collection_logs_russian_progress_and_redacts_profile_data(
-    tmp_path, caplog, monkeypatch
+    tmp_path, caplog, monkeypatch, config_for
 ) -> None:
     """Reports safe aggregate progress and redacts data while Xray validation is active."""
 
@@ -38,14 +38,12 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             code = await run_collection(
-                input_path=input_path,
-                output_dir=tmp_path / "output",
-                report_path=report_path,
-                state_path=state_path,
-                max_age_hours=72,
-                strict_first_seen=False,
-                fail_on_empty=False,
-                xray_path=tmp_path / "xray",
+                config=config_for(
+                    input_path=input_path,
+                    report_path=report_path,
+                    state_path=state_path,
+                    xray_path=tmp_path / "xray",
+                ),
                 client=client,
             )
         return code, json.loads(report_path.read_text(encoding="utf-8"))
@@ -80,7 +78,7 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
 
 
 def test_collection_logs_input_error_in_russian_without_echoing_invalid_url(
-    tmp_path, caplog
+    tmp_path, caplog, config_for
 ) -> None:
     """Catches logging of raw invalid input instead of a safe, actionable Russian explanation."""
 
@@ -88,14 +86,7 @@ def test_collection_logs_input_error_in_russian_without_echoing_invalid_url(
         input_path = tmp_path / "input.txt"
         input_path.write_text("http://private.example/secret-token\n", encoding="utf-8")
         return await run_collection(
-            input_path=input_path,
-            output_dir=tmp_path / "output",
-            report_path=tmp_path / "report.json",
-            state_path=tmp_path / "state.json",
-            max_age_hours=72,
-            strict_first_seen=False,
-            fail_on_empty=False,
-            xray_path=tmp_path / "xray",
+            config=config_for(input_path=input_path, xray_path=tmp_path / "xray")
         )
 
     caplog.set_level(logging.INFO, logger="subscription_collector.cli")
@@ -126,3 +117,35 @@ def test_configured_logging_keeps_pipeline_actions_and_suppresses_http_requests(
     assert "Этап «Публикация»: завершён." in messages
     assert "HTTP Request:" not in messages
     assert "receive_response_headers.complete" not in messages
+
+
+def test_collection_logs_aggregate_xray_failure_categories(
+    tmp_path, caplog, monkeypatch, config_for
+) -> None:
+    """Catches an opaque zero-result validation run without safe failure diagnostics."""
+
+    async def rejected(profiles, *_args, **_kwargs) -> list[ProbeResult]:
+        return [ProbeResult(False, 0, None, "ip_timeout") for _ in profiles]
+
+    monkeypatch.setattr(cli, "probe_batch", rejected)
+
+    async def exercise() -> int:
+        input_path = tmp_path / "input.txt"
+        input_path.write_text("https://source.example/list\n", encoding="utf-8")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=f"{TROJAN_TLS}\n")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_collection(
+                config=config_for(input_path=input_path, xray_path=tmp_path / "xray"),
+                client=client,
+            )
+
+    caplog.set_level(logging.INFO, logger="subscription_collector.cli")
+    assert asyncio.run(exercise()) == 0
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+
+    assert "Причины отказов Xray IP-проверки: ip_timeout: 1" in messages
+    assert "correct-horse" not in messages
+    assert "node.example.org" not in messages
