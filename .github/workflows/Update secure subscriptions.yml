@@ -23,12 +23,11 @@ jobs:
       - name: Install runtime dependencies
         run: python -m pip install -r requirements.txt
       - name: Download and verify Xray core
-        env:
-          XRAY_VERSION: v26.3.27
         run: |
           set -euo pipefail
+          xray_version="$(PYTHONPATH=src python -c 'from pathlib import Path; from subscription_collector.config_loader import load_config; print(load_config(Path("config.yaml")).xray.version)')"
           xray_dir="$RUNNER_TEMP/xray-core"
-          base_url="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}"
+          base_url="https://github.com/XTLS/Xray-core/releases/download/${xray_version}"
           rm -rf "$xray_dir"
           mkdir -p "$xray_dir"
           curl --fail --location --retry 3 --retry-all-errors \
@@ -46,17 +45,7 @@ jobs:
       - name: Collect and validate subscriptions through Xray
         run: |
           PYTHONPATH=src python -m subscription_collector \
-            --input input.txt \
-            --output-dir output \
-            --xray-path "$RUNNER_TEMP/xray-core/xray" \
-            --source-concurrency 48 \
-            --analysis-workers 160 \
-            --analysis-batch-size 1024 \
-            --probe-timeout-seconds 0.5 \
-            --probe-startup-timeout-seconds 0.75 \
-            --probe-concurrency 128 \
-            --probe-batch-size 512 \
-            --probe-batch-concurrency 4
+            --xray-path "$RUNNER_TEMP/xray-core/xray"
       - name: Commit changed outputs
         run: |
           git add --all -- output report.json .collector/state.json
