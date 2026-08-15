@@ -1,33 +1,30 @@
 {
   "counts": {
-    "accepted_profiles": 1112,
-    "candidate_lines": 55718,
+    "accepted_profiles": 1145,
+    "candidate_lines": 55701,
     "emitted_profiles": 0,
     "excluded": {
-      "insecure_flag": 99,
+      "insecure_flag": 142,
       "invalid_or_unsupported": 2,
-      "invalid_reality_key": 1,
-      "missing_fingerprint": 557,
-      "missing_required_secret": 317,
-      "missing_security": 501,
-      "missing_sni": 56,
-      "no_endpoint_confirmation": 385,
+      "invalid_reality_key": 2,
+      "missing_fingerprint": 548,
+      "missing_required_secret": 315,
+      "missing_security": 522,
+      "missing_sni": 59,
       "response_too_large": 2,
       "unsupported_transport": 1
     },
     "fetched_sources": 21,
     "input_sources": 23,
-    "parsed_profiles": 2644,
-    "probed_profiles": 581,
+    "parsed_profiles": 2734,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 20
     },
-    "unique_profiles": 581,
-    "validated_profiles": 196
+    "unique_profiles": 604
   },
-  "generated_at": "2026-08-15T12:42:12Z",
+  "generated_at": "2026-08-15T13:32:53Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
@@ -49,7 +46,7 @@
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-15T10:10:36+00:00",
+      "last_modified": "2026-08-15T13:32:53+00:00",
       "reason": null
     },
     {
@@ -166,24 +163,23 @@
   "strict_first_seen": false,
   "telegram": {
     "approved_channels": 0,
-    "candidate_channels": 259,
-    "discovered_channels": 259,
+    "candidate_channels": 262,
+    "discovered_channels": 262,
     "excluded_channels": 0,
-    "policy_accepted_uri": 1112,
-    "posts_in_window": 1180,
+    "policy_accepted_uri": 1145,
+    "posts_in_window": 1208,
     "preview_failed": 0,
-    "supported_uri": 2644,
-    "unique_uri": 1088,
-    "uri_candidates": 2646
+    "supported_uri": 2734,
+    "unique_uri": 1117,
+    "uri_candidates": 2736
   },
   "timing_ms": {
-    "channel_quality": 48,
-    "deduplication": 16,
-    "publication": 23,
-    "sources_fetch": 969,
-    "telegram_discovery": 1590,
-    "telegram_preview_fetch": 148138,
-    "total": 230234,
-    "xray_ip_validation": 64649
+    "channel_quality": 7,
+    "deduplication": 15,
+    "publication": 20,
+    "sources_fetch": 932,
+    "telegram_discovery": 1507,
+    "telegram_preview_fetch": 146969,
+    "total": 161121
   }
 }
