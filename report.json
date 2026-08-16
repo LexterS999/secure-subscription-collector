@@ -1,57 +1,57 @@
 {
   "counts": {
-    "accepted_profiles": 23724,
-    "candidate_lines": 58162,
-    "emitted_profiles": 2737,
+    "accepted_profiles": 22854,
+    "candidate_lines": 56903,
+    "emitted_profiles": 2138,
     "excluded": {
-      "config_invalid": 1024,
-      "insecure_flag": 4197,
+      "config_invalid": 1536,
+      "insecure_flag": 4172,
       "invalid_or_unsupported": 7,
       "invalid_reality_key": 29,
-      "missing_fingerprint": 6758,
-      "missing_required_secret": 13749,
-      "missing_security": 7584,
-      "missing_sni": 2087,
-      "no_endpoint_confirmation": 6975,
-      "probe_error": 2,
+      "missing_fingerprint": 6698,
+      "missing_required_secret": 13323,
+      "missing_security": 7700,
+      "missing_sni": 2094,
+      "no_endpoint_confirmation": 6649,
+      "probe_error": 19,
       "response_too_large": 2,
-      "unsupported_transport": 27
+      "unsupported_transport": 26
     },
     "fetched_sources": 21,
     "input_sources": 23,
-    "parsed_profiles": 58155,
-    "probed_profiles": 10738,
+    "parsed_profiles": 56896,
+    "probed_profiles": 10342,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 20
     },
-    "unique_profiles": 10738,
-    "validated_profiles": 2737
+    "unique_profiles": 10342,
+    "validated_profiles": 2138
   },
-  "generated_at": "2026-08-16T08:18:40Z",
+  "generated_at": "2026-08-16T12:21:59Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 83,
-        "total": 83
+        "new": 76,
+        "total": 76
       },
       "trojan": {
-        "new": 1044,
-        "total": 1044
+        "new": 943,
+        "total": 943
       },
       "vless": {
-        "new": 1610,
-        "total": 1610
+        "new": 1119,
+        "total": 1119
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-16T08:18:41+00:00",
+      "last_modified": "2026-08-16T12:21:59+00:00",
       "reason": null
     },
     {
@@ -167,11 +167,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 299,
-    "publication": 209,
-    "sources_fetch": 2876,
-    "static_filter": 6505,
-    "total": 737893,
-    "xray_ip_validation": 728003
+    "deduplication": 308,
+    "publication": 133,
+    "sources_fetch": 3241,
+    "static_filter": 6647,
+    "total": 677221,
+    "xray_ip_validation": 666890
   }
 }
