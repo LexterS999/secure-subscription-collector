@@ -1,57 +1,56 @@
 {
   "counts": {
-    "accepted_profiles": 22854,
-    "candidate_lines": 56903,
-    "emitted_profiles": 2138,
+    "accepted_profiles": 23250,
+    "candidate_lines": 57239,
+    "emitted_profiles": 2258,
     "excluded": {
       "config_invalid": 1536,
-      "insecure_flag": 4172,
-      "invalid_or_unsupported": 7,
-      "invalid_reality_key": 29,
-      "missing_fingerprint": 6698,
-      "missing_required_secret": 13323,
-      "missing_security": 7700,
-      "missing_sni": 2094,
-      "no_endpoint_confirmation": 6649,
-      "probe_error": 19,
+      "insecure_flag": 4253,
+      "invalid_or_unsupported": 5,
+      "invalid_reality_key": 15,
+      "missing_fingerprint": 6959,
+      "missing_required_secret": 13169,
+      "missing_security": 7536,
+      "missing_sni": 2016,
+      "no_endpoint_confirmation": 6642,
       "response_too_large": 2,
-      "unsupported_transport": 26
+      "unsupported_transport": 36
     },
     "fetched_sources": 21,
     "input_sources": 23,
-    "parsed_profiles": 56896,
-    "probed_profiles": 10342,
+    "parsed_profiles": 57234,
+    "probed_profiles": 10436,
     "source_freshness": {
       "failed": 2,
       "recent": 1,
       "unknown": 20
     },
-    "unique_profiles": 10342,
-    "validated_profiles": 2138
+    "unique_profiles": 10436,
+    "validated_profiles": 2258
   },
-  "generated_at": "2026-08-16T12:21:59Z",
+  "generated_at": "2026-08-16T16:14:35Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 76,
-        "total": 76
+        "new": 104,
+        "total": 104
       },
       "trojan": {
-        "new": 943,
-        "total": 943
+        "new": 1023,
+        "total": 1023
       },
       "vless": {
-        "new": 1119,
-        "total": 1119
+        "new": 1131,
+        "total": 1131
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-16T12:21:59+00:00",
+      "last_modified": "2026-08-16T16:14:35+00:00",
       "reason": null
     },
     {
@@ -167,11 +166,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 308,
-    "publication": 133,
-    "sources_fetch": 3241,
-    "static_filter": 6647,
-    "total": 677221,
-    "xray_ip_validation": 666890
+    "deduplication": 282,
+    "publication": 226,
+    "sources_fetch": 1107,
+    "static_filter": 5291,
+    "total": 655607,
+    "xray_ip_validation": 648699
   }
 }
