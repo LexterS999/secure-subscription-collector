@@ -1,57 +1,68 @@
 {
   "counts": {
-    "accepted_profiles": 25195,
-    "candidate_lines": 60664,
-    "emitted_profiles": 2403,
+    "accepted_profiles": 14563,
+    "candidate_lines": 35096,
+    "emitted_profiles": 2090,
     "excluded": {
-      "config_invalid": 2048,
-      "insecure_flag": 4220,
-      "invalid_or_unsupported": 6,
-      "invalid_reality_key": 49,
-      "missing_fingerprint": 7579,
-      "missing_required_secret": 13713,
-      "missing_security": 7531,
-      "missing_sni": 2335,
-      "no_endpoint_confirmation": 6850,
-      "probe_error": 27,
-      "response_too_large": 2,
-      "unsupported_transport": 36
+      "config_invalid": 1536,
+      "http_error:HTTPStatusError": 11,
+      "insecure_flag": 2855,
+      "invalid_or_unsupported": 4,
+      "invalid_reality_key": 7,
+      "missing_fingerprint": 4170,
+      "missing_required_secret": 7840,
+      "missing_security": 4662,
+      "missing_sni": 983,
+      "no_endpoint_confirmation": 6599,
+      "probe_error": 5,
+      "response_too_large": 1,
+      "unsupported_transport": 12
     },
-    "fetched_sources": 21,
+    "fetched_sources": 11,
     "input_sources": 23,
-    "parsed_profiles": 60658,
-    "probed_profiles": 11328,
+    "parsed_profiles": 35092,
+    "probed_profiles": 10230,
     "source_freshness": {
-      "failed": 2,
+      "failed": 12,
       "recent": 1,
-      "unknown": 20
+      "unknown": 10
     },
-    "unique_profiles": 11328,
-    "validated_profiles": 2403
+    "unique_profiles": 10230,
+    "validated_profiles": 2090
   },
-  "generated_at": "2026-08-17T12:26:21Z",
+  "generated_at": "2026-08-17T16:17:20Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 43,
-        "total": 43
+        "new": 56,
+        "total": 56
       },
       "trojan": {
-        "new": 1339,
-        "total": 1339
+        "new": 1019,
+        "total": 1019
       },
       "vless": {
-        "new": 1021,
-        "total": 1021
+        "new": 1015,
+        "total": 1015
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-17T10:49:24+00:00",
+      "last_modified": "2026-08-17T16:17:20+00:00",
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "http_error:HTTPStatusError"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
       "reason": null
     },
     {
@@ -67,7 +78,47 @@
     {
       "freshness": "failed",
       "last_modified": null,
-      "reason": "response_too_large"
+      "reason": "http_error:HTTPStatusError"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "http_error:HTTPStatusError"
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "http_error:HTTPStatusError"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "http_error:HTTPStatusError"
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "http_error:HTTPStatusError"
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "http_error:HTTPStatusError"
     },
     {
       "freshness": "unknown",
@@ -80,9 +131,14 @@
       "reason": null
     },
     {
-      "freshness": "unknown",
+      "freshness": "failed",
       "last_modified": null,
-      "reason": null
+      "reason": "http_error:HTTPStatusError"
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "http_error:HTTPStatusError"
     },
     {
       "freshness": "unknown",
@@ -95,69 +151,14 @@
       "reason": null
     },
     {
-      "freshness": "unknown",
+      "freshness": "failed",
       "last_modified": null,
-      "reason": null
+      "reason": "http_error:HTTPStatusError"
     },
     {
-      "freshness": "unknown",
+      "freshness": "failed",
       "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
+      "reason": "http_error:HTTPStatusError"
     },
     {
       "freshness": "unknown",
@@ -167,11 +168,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 326,
-    "publication": 195,
-    "sources_fetch": 4301,
-    "static_filter": 7294,
-    "total": 730723,
-    "xray_ip_validation": 718605
+    "deduplication": 176,
+    "publication": 139,
+    "sources_fetch": 19253,
+    "static_filter": 3208,
+    "total": 675139,
+    "xray_ip_validation": 652362
   }
 }
