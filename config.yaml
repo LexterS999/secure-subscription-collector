@@ -11,6 +11,12 @@ paths:
   state: .collector/state.json
   # Путь к исполняемому файлу Xray, используемому только во время IP-проверки.
   xray_path: .xray/xray
+  # Обезличенное состояние адаптивной оценки публичных Telegram-каналов.
+  telegram_state: .collector/channel_state.json
+  # Служебный реестр обнаруженных публичных Telegram-каналов.
+  telegram_registry: .collector/tg_registry.txt
+  # Итоговый отсортированный список одобренных публичных Telegram-каналов.
+  tg_channels: tg_channels.txt
 
 sources:
   # Максимальный допустимый возраст источника в часах по HTTP-заголовку Last-Modified.
@@ -77,3 +83,44 @@ behavior:
 xray:
   # Версия Xray, которую GitHub Actions скачивает и проверяет по SHA-512.
   version: v26.3.27
+
+telegram:
+  # Окно возраста публичных сообщений Telegram в часах; учитываются только надёжно датированные посты.
+  max_post_age_hours: 24
+  # Ограничение числа профилей из одного канала отсутствует; значение должно оставаться null.
+  max_profiles_per_channel: null
+  # Ограничение числа страниц публичного preview отсутствует; значение должно оставаться null.
+  max_pages_per_channel: null
+  # Число одновременных запросов к публичным preview-страницам.
+  concurrency: 12
+  # Предельное время ожидания одного preview-ответа в секундах.
+  timeout_seconds: 20.0
+  # Максимальный размер HTML-ответа Telegram в байтах.
+  max_response_bytes: 5242880
+  # Максимальное число HTTPS-перенаправлений в пределах разрешённого домена Telegram.
+  max_redirects: 3
+  quality:
+    # Базовый проходной балл качества после накопления достаточной уверенности.
+    approval_score: 70.0
+    # Минимальное число независимых наблюдений для уверенного решения.
+    min_evidence_runs: 2
+    # Минимальное число URI поддерживаемых схем в наблюдении.
+    min_supported_candidates: 2
+    # Минимальное число надёжно датированных свежих сообщений в наблюдении.
+    min_fresh_posts: 2
+    # Дополнительный требуемый балл для нового канала при низкой уверенности.
+    new_channel_margin: 20.0
+    # Нижняя граница уверенности для статуса approved.
+    minimum_confidence: 0.5
+    # Период полураспада исторической оценки в часах.
+    history_half_life_hours: 72.0
+    # Псевдонаблюдения сглаживания результатов Xray: успехи и отказы.
+    xray_prior_successes: 1.0
+    xray_prior_failures: 1.0
+    # Веса компонентов оценки; суммарно образуют шкалу 0–100.
+    activity_weight: 20.0
+    supported_yield_weight: 20.0
+    static_security_weight: 25.0
+    uniqueness_weight: 15.0
+    nonduplication_weight: 10.0
+    xray_weight: 10.0

@@ -15,6 +15,9 @@ paths:
   report: custom-report.json
   state: custom-state.json
   xray_path: /opt/xray/xray
+  telegram_state: custom-channel-state.json
+  telegram_registry: custom-tg-registry.json
+  tg_channels: custom-tg-channels.txt
 sources:
   max_age_hours: 24
   concurrency: 12
@@ -47,6 +50,30 @@ behavior:
   fail_on_empty: false
 xray:
   version: v26.3.27
+telegram:
+  max_post_age_hours: 24
+  max_profiles_per_channel: null
+  max_pages_per_channel: null
+  concurrency: 12
+  timeout_seconds: 15.0
+  max_response_bytes: 1048576
+  max_redirects: 2
+  quality:
+    approval_score: 70.0
+    min_evidence_runs: 2
+    min_supported_candidates: 2
+    min_fresh_posts: 2
+    new_channel_margin: 20.0
+    minimum_confidence: 0.5
+    history_half_life_hours: 72.0
+    xray_prior_successes: 1.0
+    xray_prior_failures: 1.0
+    activity_weight: 20.0
+    supported_yield_weight: 20.0
+    static_security_weight: 25.0
+    uniqueness_weight: 15.0
+    nonduplication_weight: 10.0
+    xray_weight: 10.0
 """.lstrip()
         + extra,
         encoding="utf-8",

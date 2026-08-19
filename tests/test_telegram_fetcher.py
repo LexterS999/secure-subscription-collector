@@ -1,9 +1,10 @@
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx
 
-from subscription_collector.fetcher import fetch_telegram_previews
+from subscription_collector.fetcher import fetch_recent_telegram_posts, fetch_telegram_previews
 from subscription_collector.models import Freshness
 
 NOW = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
@@ -50,22 +51,43 @@ def test_preview_fetch_caps_response_size(config_for) -> None:
         def handler(_: httpx.Request) -> httpx.Response:
             return httpx.Response(200, content=b"x" * 64)
 
-        settings = config_for().telegram
-        settings = type(settings)(
-            registry_path=settings.registry_path,
-            state_path=settings.state_path,
-            max_post_age_hours=settings.max_post_age_hours,
-            concurrency=settings.concurrency,
-            timeout_seconds=settings.timeout_seconds,
-            max_response_bytes=16,
-            max_redirects=settings.max_redirects,
-            max_pages_per_channel=settings.max_pages_per_channel,
-            sample_post_limit=settings.sample_post_limit,
-        )
+        settings = replace(config_for().telegram, max_response_bytes=16)
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             results = await fetch_telegram_previews(["channel_name"], client, NOW, settings)
 
         assert results[0].freshness is Freshness.FAILED
         assert results[0].reason == "response_too_large"
+
+    asyncio.run(exercise())
+
+
+def test_recent_post_fetcher_paginates_until_preview_reaches_old_messages(config_for) -> None:
+    async def exercise() -> None:
+        requests: list[str] = []
+        fresh = "2026-08-15T11:30:00+00:00"
+        old = "2026-08-13T11:30:00+00:00"
+
+        def page(message_id: int, published_at: str) -> str:
+            return f"""
+            <div class="tgme_widget_message" data-post="channel_name/{message_id}">
+              <div class="tgme_widget_message_text">vless://profile-{message_id}</div>
+              <time datetime="{published_at}"></time>
+            </div>
+            """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(str(request.url))
+            return httpx.Response(
+                200,
+                text=page(20, fresh) if request.url.params.get("before") is None else page(19, old),
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            posts = await fetch_recent_telegram_posts(
+                ["Channel_Name"], client, NOW, config_for().telegram
+            )
+
+        assert [post.message_id for post in posts] == ["20"]
+        assert requests == ["https://t.me/s/channel_name", "https://t.me/s/channel_name?before=20"]
 
     asyncio.run(exercise())

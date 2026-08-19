@@ -15,6 +15,7 @@ def build_report(
     stats: RunStats,
     max_age_hours: int,
     strict_first_seen: bool,
+    telegram: dict[str, int] | None = None,
 ) -> dict[str, object]:
     """Build a redacted audit record with aggregate source and publication outcomes."""
     source_rows = [
@@ -44,6 +45,7 @@ def build_report(
                 for protocol in _PROTOCOLS
             }
         },
+        "telegram": dict(sorted((telegram or {}).items())),
         "counts": {
             "input_sources": stats.input_sources,
             "fetched_sources": stats.fetched_sources,

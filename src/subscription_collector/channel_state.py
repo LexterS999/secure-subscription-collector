@@ -9,8 +9,8 @@ from typing import Any
 from .channel_quality import ChannelEvaluation, ChannelStateRecord
 from .writer import write_json_atomic, write_text_atomic
 
-_STATE_VERSION = 2
-_VALID_STATUSES = {"candidate", "approved", "excluded"}
+_STATE_VERSION = 3
+_VALID_STATUSES = {"candidate", "approved", "watch", "excluded"}
 
 
 def channel_state_key(handle: str) -> str:
@@ -33,6 +33,10 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         "first_seen_at",
         "last_seen_at",
         "last_evaluated_at",
+        "confidence",
+        "required_score",
+        "xray_successes",
+        "xray_failures",
     }
     if set(value) != required or value["status"] not in _VALID_STATUSES:
         return None
@@ -48,6 +52,16 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         or value["evidence_runs"] < 1
     ):
         return None
+    for field, minimum, maximum in (("confidence", 0.0, 1.0), ("required_score", 0.0, 100.0)):
+        if (
+            isinstance(value[field], bool)
+            or not isinstance(value[field], (int, float))
+            or not minimum <= float(value[field]) <= maximum
+        ):
+            return None
+    for field in ("xray_successes", "xray_failures"):
+        if isinstance(value[field], bool) or not isinstance(value[field], int) or value[field] < 0:
+            return None
     string_fields = ("reason", "first_seen_at", "last_seen_at", "last_evaluated_at")
     if any(not isinstance(value[field], str) or not value[field] for field in string_fields):
         return None
@@ -59,6 +73,10 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         first_seen_at=value["first_seen_at"],
         last_seen_at=value["last_seen_at"],
         last_evaluated_at=value["last_evaluated_at"],
+        confidence=round(float(value["confidence"]), 4),
+        required_score=round(float(value["required_score"]), 2),
+        xray_successes=value["xray_successes"],
+        xray_failures=value["xray_failures"],
     )
 
 
@@ -114,6 +132,10 @@ def update_channel_state(
                 "first_seen_at": record.first_seen_at,
                 "last_seen_at": record.last_seen_at,
                 "last_evaluated_at": record.last_evaluated_at,
+                "confidence": record.confidence,
+                "required_score": record.required_score,
+                "xray_successes": record.xray_successes,
+                "xray_failures": record.xray_failures,
             }
             for key, record in sorted(state.items())
         },

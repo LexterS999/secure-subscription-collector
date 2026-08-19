@@ -48,6 +48,17 @@ class SourceResult:
 
 
 @dataclass(frozen=True, slots=True)
+class TelegramPost:
+    """A dated public Telegram preview message without private account data."""
+
+    handle: str
+    message_id: str
+    published_at: str
+    text: str
+    hrefs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Decision:
     profile: Profile | None
     reason: str | None = None

@@ -7,8 +7,9 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .config_loader import SourcesConfig
-from .models import Freshness, SourceResult
+from .config_loader import SourcesConfig, TelegramConfig
+from .models import Freshness, SourceResult, TelegramPost
+from .telegram import canonical_preview_url, parse_preview_posts
 
 
 def _parse_last_modified(value: str | None) -> datetime | None:
@@ -91,6 +92,144 @@ async def _fetch_one(
     if age_seconds > settings.max_age_hours * 3600:
         return SourceResult(url, Freshness.STALE, None, last_modified=modified.isoformat())
     return SourceResult(url, Freshness.RECENT, text, last_modified=modified.isoformat())
+
+
+async def _fetch_telegram_preview(
+    handle: str,
+    client: httpx.AsyncClient,
+    settings: TelegramConfig,
+    semaphore: asyncio.Semaphore,
+    request_url: str | None = None,
+) -> SourceResult:
+    """Fetch one public Telegram preview without following external or insecure redirects."""
+    try:
+        source_url = canonical_preview_url(handle)
+    except ValueError:
+        return SourceResult(handle, Freshness.FAILED, None, reason="invalid_telegram_handle")
+
+    allowed_hosts = {"t.me", "www.t.me", "telegram.me", "www.telegram.me"}
+    async with semaphore:
+        try:
+            request_url = request_url or source_url
+            for redirect_count in range(settings.max_redirects + 1):
+                response = await client.get(request_url, follow_redirects=False)
+                if response.is_redirect:
+                    location = response.headers.get("Location")
+                    if redirect_count == settings.max_redirects:
+                        return SourceResult(
+                            source_url,
+                            Freshness.FAILED,
+                            None,
+                            reason="too_many_redirects",
+                        )
+                    if not location:
+                        return SourceResult(
+                            source_url, Freshness.FAILED, None, reason="redirect_without_location"
+                        )
+                    try:
+                        next_url = str(response.url.join(location))
+                        next_parts = urlsplit(next_url)
+                    except ValueError:
+                        return SourceResult(
+                            source_url, Freshness.FAILED, None, reason="redirect_invalid_location"
+                        )
+                    if (
+                        next_parts.scheme != "https"
+                        or next_parts.hostname not in allowed_hosts
+                        or next_parts.username
+                        or next_parts.password
+                    ):
+                        return SourceResult(
+                            source_url, Freshness.FAILED, None, reason="redirect_non_https"
+                        )
+                    request_url = next_url
+                    continue
+                response.raise_for_status()
+                content = response.content
+                if len(content) > settings.max_response_bytes:
+                    return SourceResult(
+                        source_url,
+                        Freshness.FAILED,
+                        None,
+                        reason="response_too_large",
+                    )
+                try:
+                    text = content.decode("utf-8")
+                except UnicodeDecodeError:
+                    return SourceResult(source_url, Freshness.FAILED, None, reason="invalid_utf8")
+                return SourceResult(source_url, Freshness.UNKNOWN, text)
+            return SourceResult(source_url, Freshness.FAILED, None, reason="too_many_redirects")
+        except httpx.TimeoutException:
+            return SourceResult(source_url, Freshness.FAILED, None, reason="timeout")
+        except httpx.HTTPError as error:
+            return SourceResult(
+                source_url, Freshness.FAILED, None, reason=f"http_error:{type(error).__name__}"
+            )
+
+
+async def fetch_telegram_previews(
+    handles: list[str],
+    client: httpx.AsyncClient,
+    _: datetime,
+    settings: TelegramConfig,
+) -> list[SourceResult]:
+    """Fetch canonical public Telegram previews with bounded concurrent requests."""
+    semaphore = asyncio.Semaphore(settings.concurrency)
+    return list(
+        await asyncio.gather(
+            *(_fetch_telegram_preview(handle, client, settings, semaphore) for handle in handles)
+        )
+    )
+
+
+async def _fetch_recent_posts_for_handle(
+    handle: str,
+    client: httpx.AsyncClient,
+    now: datetime,
+    settings: TelegramConfig,
+    semaphore: asyncio.Semaphore,
+) -> list[TelegramPost]:
+    try:
+        canonical_url = canonical_preview_url(handle)
+    except ValueError:
+        return []
+    request_url = canonical_url
+    seen_ids: set[str] = set()
+    seen_cursors: set[str] = set()
+    posts: list[TelegramPost] = []
+
+    while True:
+        result = await _fetch_telegram_preview(handle, client, settings, semaphore, request_url)
+        if result.text is None:
+            return posts
+        page_posts = parse_preview_posts(result.text, handle, now, settings.max_post_age_hours)
+        new_posts = [post for post in page_posts if post.message_id not in seen_ids]
+        if not new_posts:
+            return posts
+        posts.extend(new_posts)
+        seen_ids.update(post.message_id for post in new_posts)
+        cursor = str(min(int(post.message_id) for post in new_posts))
+        if cursor in seen_cursors:
+            return posts
+        seen_cursors.add(cursor)
+        request_url = f"{canonical_url}?before={cursor}"
+
+
+async def fetch_recent_telegram_posts(
+    handles: list[str],
+    client: httpx.AsyncClient,
+    now: datetime,
+    settings: TelegramConfig,
+) -> list[TelegramPost]:
+    """Collect all reliably dated public preview posts in the configured age window."""
+    semaphore = asyncio.Semaphore(settings.concurrency)
+    pages = await asyncio.gather(
+        *(
+            _fetch_recent_posts_for_handle(handle, client, now, settings, semaphore)
+            for handle in handles
+        )
+    )
+    return [post for page in pages for post in page]
 
 
 async def fetch_sources(

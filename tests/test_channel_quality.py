@@ -25,6 +25,7 @@ HEALTHY = ChannelMetrics(
     supported_candidates=2,
     static_accepted=2,
     unique_profiles=2,
+    xray_passed=2,
 )
 EMPTY = ChannelMetrics(
     preview_available=True,
@@ -42,7 +43,7 @@ def test_candidate_requires_two_evidence_runs_before_approval() -> None:
     assert evaluation.status == "candidate"
     assert evaluation.reason == "insufficient_evidence"
     assert evaluation.evidence_runs == 1
-    assert evaluation.score == 100.0
+    assert evaluation.score > SETTINGS.approval_score
 
 
 def test_second_healthy_evaluation_approves_channel() -> None:
@@ -116,9 +117,39 @@ def test_preview_transport_failure_preserves_existing_approved_channel() -> None
     assert result.evidence_runs == approved.evidence_runs
 
 
-def test_channel_quality_metrics_do_not_expose_xray_results() -> None:
-    assert "xray_passed" not in ChannelMetrics.__dataclass_fields__
-    assert "xray_failed" not in ChannelMetrics.__dataclass_fields__
+def test_adaptive_quality_increases_after_successful_xray_observation() -> None:
+    """Prevent Xray outcomes from being ignored by the approved adaptive model."""
+    failed = ChannelMetrics(
+        preview_available=True,
+        fresh_posts=2,
+        all_uri_candidates=2,
+        supported_candidates=2,
+        static_accepted=2,
+        unique_profiles=2,
+        duplicate_posts=0,
+        xray_passed=0,
+        xray_failed=3,
+    )
+    recovered = ChannelMetrics(
+        preview_available=True,
+        fresh_posts=2,
+        all_uri_candidates=2,
+        supported_candidates=2,
+        static_accepted=2,
+        unique_profiles=2,
+        duplicate_posts=0,
+        xray_passed=3,
+        xray_failed=0,
+    )
+
+    first = evaluate_channel("quality_channel", failed, None, SETTINGS, NOW)
+    second = evaluate_channel(
+        "quality_channel", recovered, first.to_state_record(), SETTINGS, NOW
+    )
+
+    assert second.score > first.score
+    assert second.confidence >= first.confidence
+    assert second.required_score <= first.required_score
 
 
 def test_legacy_xray_state_is_discarded_for_content_quality_migration(tmp_path: Path) -> None:
@@ -146,3 +177,16 @@ def test_legacy_xray_state_is_discarded_for_content_quality_migration(tmp_path: 
     )
 
     assert load_channel_state(state_path) == {}
+
+
+def test_channel_state_round_trip_preserves_adaptive_evidence(tmp_path: Path) -> None:
+    state_path = tmp_path / "channel_state.json"
+    evaluation = evaluate_channel("quality_channel", HEALTHY, None, SETTINGS, NOW)
+
+    update_channel_state(state_path, {"quality_channel": evaluation}, NOW)
+    restored = next(iter(load_channel_state(state_path).values()))
+
+    assert restored.confidence == evaluation.confidence
+    assert restored.required_score == evaluation.required_score
+    assert restored.xray_successes == evaluation.xray_successes
+    assert restored.xray_failures == evaluation.xray_failures

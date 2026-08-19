@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from html import unescape
 from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
@@ -22,6 +25,8 @@ _DEEP_LINK = re.compile(
     re.IGNORECASE,
 )
 _PROFILE_URI = re.compile(r"(?P<uri>(?:vless|trojan|hy2|hysteria2)://[^\s<>\"']+)", re.IGNORECASE)
+_BASE64_TOKEN = re.compile(r"[A-Za-z0-9_+/=-]{16,}")
+_MAX_BASE64_INPUT_BYTES = 1_048_576
 
 
 def _canonical_handle(value: str) -> str | None:
@@ -33,7 +38,7 @@ def _canonical_handle(value: str) -> str | None:
 
 def extract_telegram_handles(raw_text: str) -> set[str]:
     """Return explicit public Telegram usernames from a raw seed URI without logging it."""
-    decoded = unquote(raw_text)
+    decoded = unescape(unquote(raw_text))
     handles: set[str] = set()
     for pattern in (_AT_HANDLE, _PUBLIC_URL, _DEEP_LINK):
         for match in pattern.finditer(decoded):
@@ -51,11 +56,7 @@ def canonical_preview_url(handle: str) -> str:
     return f"https://t.me/s/{canonical}"
 
 
-def _post_datetime(message: object) -> datetime | None:
-    time_element = message.select_one("time[datetime]")
-    if time_element is None:
-        return None
-    raw_value = time_element.get("datetime")
+def _parse_iso_datetime(raw_value: object) -> datetime | None:
     if not isinstance(raw_value, str):
         return None
     try:
@@ -65,6 +66,39 @@ def _post_datetime(message: object) -> datetime | None:
     if parsed.tzinfo is None:
         return None
     return parsed.astimezone(UTC)
+
+
+def _parse_unix_datetime(raw_value: object) -> datetime | None:
+    if not isinstance(raw_value, str) or not raw_value.isdigit() or len(raw_value) not in {10, 13}:
+        return None
+    seconds = int(raw_value) / (1000 if len(raw_value) == 13 else 1)
+    try:
+        return datetime.fromtimestamp(seconds, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _post_datetime(message: object) -> datetime | None:
+    time_element = message.select_one("time[datetime]")
+    candidates: list[object] = []
+    if time_element is not None:
+        candidates.append(time_element.get("datetime"))
+    candidates.extend(message.get(attribute) for attribute in ("data-datetime", "data-date"))
+    timestamp_candidates = [message.get("data-timestamp")]
+    date_element = message.select_one(".tgme_widget_message_date")
+    if date_element is not None:
+        candidates.extend(
+            date_element.get(attribute)
+            for attribute in ("datetime", "data-datetime", "title")
+        )
+        timestamp_candidates.append(date_element.get("data-timestamp"))
+    for candidate in candidates:
+        if (parsed := _parse_iso_datetime(candidate)) is not None:
+            return parsed
+    for candidate in timestamp_candidates:
+        if (parsed := _parse_unix_datetime(candidate)) is not None:
+            return parsed
+    return None
 
 
 def _message_id(message: object) -> str | None:
@@ -104,9 +138,12 @@ def parse_preview_posts(
             continue
         text = text_element.get_text(" ", strip=True)
         hrefs = tuple(
-            href
-            for anchor in text_element.select("a[href]")
-            if isinstance((href := anchor.get("href")), str)
+            value
+            for element in text_element.select(
+                "[href], [data-url], [data-href], [data-telegram-url]"
+            )
+            for attribute in ("href", "data-url", "data-href", "data-telegram-url")
+            if isinstance((value := element.get(attribute)), str)
         )
         parsed_posts.append(
             TelegramPost(
@@ -120,10 +157,33 @@ def parse_preview_posts(
     return parsed_posts
 
 
+def _strict_base64_text(value: str) -> str | None:
+    token = value.strip()
+    if len(token) > _MAX_BASE64_INPUT_BYTES or not _BASE64_TOKEN.fullmatch(token):
+        return None
+    unpadded = token.rstrip("=")
+    if not unpadded or "=" in unpadded:
+        return None
+    padded = unpadded + "=" * (-len(unpadded) % 4)
+    try:
+        decoded = base64.b64decode(padded, altchars=b"-_", validate=True)
+        text = decoded.decode("utf-8")
+    except (ValueError, binascii.Error, UnicodeDecodeError):
+        return None
+    canonical = base64.b64encode(decoded, altchars=b"-_").decode("ascii").rstrip("=")
+    if canonical != unpadded.replace("+", "-").replace("/", "_"):
+        return None
+    return text
+
+
 def _uri_candidates(value: str) -> Iterable[str]:
-    for match in _PROFILE_URI.finditer(value):
-        candidate = match.group("uri").rstrip(".,;!)]}")
-        yield candidate
+    normalized = unescape(unquote(value))
+    for candidate_text in (normalized, _strict_base64_text(normalized)):
+        if candidate_text is None:
+            continue
+        for match in _PROFILE_URI.finditer(candidate_text):
+            candidate = match.group("uri").rstrip(".,;!)]}")
+            yield candidate
 
 
 def extract_profile_uris(posts: Iterable[TelegramPost]) -> list[str]:
