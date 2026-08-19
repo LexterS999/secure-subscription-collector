@@ -252,6 +252,8 @@ async def run_collection(
                 stats.exclude(source.reason or source.freshness.value)
                 continue
             stats.fetched_sources += 1
+            if source.source_url not in telegram_source_urls:
+                continue
             lines = extract_candidate_lines(source.text)
             stats.candidate_lines += len(lines)
             for batch_start in range(0, len(lines), filter_settings.batch_size):

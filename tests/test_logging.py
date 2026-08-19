@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import UTC, datetime
 
 import httpx
 
@@ -63,9 +64,9 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
     assert "correct-horse" not in messages
     assert "node.example.org" not in messages
     assert "second.example.org" not in messages
-    assert report["publication"]["protocols"]["trojan"] == {"new": 2, "total": 2}
-    assert report["counts"]["probed_profiles"] == 2
-    assert report["counts"]["validated_profiles"] == 2
+    assert report["publication"]["protocols"]["trojan"] == {"new": 0, "total": 0}
+    assert report["counts"]["probed_profiles"] == 0
+    assert report["counts"]["validated_profiles"] == 0
     assert set(report["timing_ms"]) >= {
         "sources_fetch",
         "static_filter",
@@ -133,8 +134,22 @@ def test_collection_logs_aggregate_xray_failure_categories(
         input_path = tmp_path / "input.txt"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
 
+        seed = TROJAN_TLS.replace("#source-name", "#@quality_channel")
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text=f"{TROJAN_TLS}\n")
+            if request.url.host == "source.example":
+                return httpx.Response(200, text=f"{seed}\n")
+            if request.url.host == "t.me":
+                published_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+                return httpx.Response(
+                    200,
+                    text=(
+                        '<div class="tgme_widget_message" data-post="quality_channel/1">'
+                        f'<div class="tgme_widget_message_text">{TROJAN_TLS}</div>'
+                        f'<time datetime="{published_at}"></time></div>'
+                    ),
+                )
+            raise AssertionError(f"unexpected request: {request.url}")
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await run_collection(

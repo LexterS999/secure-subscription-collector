@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 import httpx
 
@@ -38,8 +39,22 @@ def test_collection_reuses_each_profile_fingerprint_after_deduplication(
         state_path = tmp_path / "state.json"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
 
+        seed = TROJAN_TLS.replace("#source-name", "#@quality_channel")
+
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text=TROJAN_TLS)
+            if request.url.host == "source.example":
+                return httpx.Response(200, text=seed)
+            if request.url.host == "t.me":
+                published_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+                return httpx.Response(
+                    200,
+                    text=(
+                        '<div class="tgme_widget_message" data-post="quality_channel/1">'
+                        f'<div class="tgme_widget_message_text">{TROJAN_TLS}</div>'
+                        f'<time datetime="{published_at}"></time></div>'
+                    ),
+                )
+            raise AssertionError(f"unexpected request: {request.url}")
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             code = await cli.run_collection(

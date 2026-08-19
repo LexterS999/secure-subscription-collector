@@ -72,7 +72,10 @@ def test_public_preview_profiles_share_xray_validation_and_approve_quality_chann
     published = (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8")
     report = json.loads(config.paths.report_path.read_text(encoding="utf-8"))
 
-    assert published.count("\n") == 3
+    assert published.count("\n") == 2
+    assert "323e4567-e89b-12d3-a456-426614174000" not in published
+    assert "123e4567-e89b-12d3-a456-426614174000" in published
+    assert "223e4567-e89b-12d3-a456-426614174000" in published
     assert config.paths.tg_channels_path.read_text(encoding="utf-8") == "@quality_channel\n"
     assert "quality_channel" not in config.paths.telegram_state_path.read_text(encoding="utf-8")
     assert report["telegram"]["discovered_channels"] == 1
