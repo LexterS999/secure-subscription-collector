@@ -1,63 +1,62 @@
 {
   "counts": {
-    "accepted_profiles": 32213,
-    "candidate_lines": 77977,
-    "emitted_profiles": 3425,
+    "accepted_profiles": 2473,
+    "candidate_lines": 6520,
+    "emitted_profiles": 94,
     "excluded": {
-      "config_invalid": 5120,
-      "insecure_flag": 6125,
-      "invalid_or_unsupported": 7,
-      "invalid_reality_key": 12,
-      "missing_fingerprint": 10765,
-      "missing_required_secret": 18344,
-      "missing_security": 7663,
-      "missing_sni": 2808,
-      "no_endpoint_confirmation": 7414,
-      "probe_error": 9,
-      "response_too_large": 1,
-      "unsupported_transport": 40
+      "config_invalid": 512,
+      "insecure_flag": 597,
+      "invalid_or_unsupported": 21,
+      "missing_fingerprint": 1107,
+      "missing_required_secret": 1010,
+      "missing_security": 903,
+      "missing_sni": 407,
+      "no_endpoint_confirmation": 704,
+      "probe_error": 3,
+      "response_too_large": 2,
+      "unsupported_transport": 2
     },
-    "fetched_sources": 25,
+    "fetched_sources": 331,
     "input_sources": 26,
-    "parsed_profiles": 77970,
-    "probed_profiles": 15968,
+    "parsed_profiles": 6499,
+    "probed_profiles": 1313,
     "source_freshness": {
-      "failed": 1,
+      "failed": 2,
       "recent": 1,
-      "unknown": 24
+      "unknown": 330
     },
-    "unique_profiles": 15968,
-    "validated_profiles": 3425
+    "unique_profiles": 1313,
+    "validated_profiles": 94
   },
-  "generated_at": "2026-08-19T04:29:02Z",
+  "generated_at": "2026-08-19T08:19:44Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 22,
-        "total": 22
+        "new": 1,
+        "total": 1
       },
       "trojan": {
-        "new": 1617,
-        "total": 1617
+        "new": 28,
+        "total": 28
       },
       "vless": {
-        "new": 1786,
-        "total": 1786
+        "new": 65,
+        "total": 65
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-19T04:29:02+00:00",
+      "last_modified": "2026-08-19T08:19:44+00:00",
       "reason": null
     },
     {
-      "freshness": "unknown",
+      "freshness": "failed",
       "last_modified": null,
-      "reason": null
+      "reason": "response_too_large"
     },
     {
       "freshness": "unknown",
@@ -178,15 +177,1558 @@
       "freshness": "unknown",
       "last_modified": null,
       "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
     }
   ],
   "strict_first_seen": false,
+  "telegram": {
+    "approved_channels": 0,
+    "candidate_channels": 307,
+    "discovered_channels": 307,
+    "excluded_channels": 0,
+    "fresh_posts": 4312,
+    "watch_channels": 0
+  },
   "timing_ms": {
-    "deduplication": 382,
-    "publication": 223,
-    "sources_fetch": 758,
-    "static_filter": 7364,
-    "total": 846356,
-    "xray_ip_validation": 837626
+    "deduplication": 25,
+    "publication": 675,
+    "sources_fetch": 96696,
+    "static_filter": 528,
+    "total": 146979,
+    "xray_ip_validation": 48661
   }
 }
