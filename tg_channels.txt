@@ -1,9 +1,2 @@
-@alpha_v2rayip
-@azaranv2ray
-@bisto4_service
-@chillguy_vpn
-@lonup_m
-@networld_vpn
-@outlinereleasedkey
-@red2ray
-@v2rayng_ip
+@oneclickvpnkeys
+@vpn_mafia
