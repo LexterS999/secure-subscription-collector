@@ -32,7 +32,12 @@ from .policy import evaluate_strict_secure
 from .probe import probe_batch
 from .report import build_report
 from .state import update_state
-from .telegram import canonical_preview_url, extract_profile_uris, extract_telegram_handles
+from .telegram import (
+    canonical_preview_url,
+    extract_candidate_profile_uris,
+    extract_profile_uris,
+    extract_telegram_handles,
+)
 from .writer import write_json_atomic
 
 logger = logging.getLogger(__name__)
@@ -374,22 +379,36 @@ async def run_collection(
     for post in telegram_posts:
         posts_by_handle[post.handle].append(post)
     for handle in sorted(telegram_handles):
+        handle_posts = posts_by_handle[handle]
         previous = previous_channel_state.get(channel_state_key(handle))
+        all_candidate_uris = extract_candidate_profile_uris(handle_posts)
+        per_post_profile_counts = [len(extract_profile_uris([post])) for post in handle_posts]
+        published_at_values = [
+            datetime.fromisoformat(post.published_at.replace("Z", "+00:00")) for post in handle_posts
+        ]
+        span_hours = 0.0
+        if len(published_at_values) >= 2:
+            span_hours = (
+                max(published_at_values) - min(published_at_values)
+            ).total_seconds() / 3600
         evaluation = evaluate_channel(
             handle,
             ChannelMetrics(
-                preview_available=bool(posts_by_handle[handle]),
-                fresh_posts=len(posts_by_handle[handle]),
-                all_uri_candidates=len(telegram_profile_uris.get(handle, [])),
+                preview_available=bool(handle_posts),
+                fresh_posts=len(handle_posts),
+                all_uri_candidates=len(all_candidate_uris),
                 supported_candidates=len(telegram_profile_uris.get(handle, [])),
                 static_accepted=telegram_static_accepted[handle],
                 unique_profiles=telegram_unique_profiles[handle],
                 duplicate_posts=max(
                     0,
-                    len(posts_by_handle[handle]) - len(telegram_profile_uris[handle]),
+                    sum(per_post_profile_counts) - len(telegram_profile_uris.get(handle, [])),
                 ),
                 xray_passed=telegram_xray_passed[handle],
                 xray_failed=telegram_xray_failed[handle],
+                posts_with_profiles=sum(1 for count in per_post_profile_counts if count > 0),
+                total_text_length=sum(len(post.text) for post in handle_posts),
+                span_hours=span_hours,
             ),
             previous,
             config.telegram.quality,

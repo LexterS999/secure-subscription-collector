@@ -20,6 +20,9 @@ class ChannelMetrics:
     duplicate_posts: int = 0
     xray_passed: int = 0
     xray_failed: int = 0
+    posts_with_profiles: int = 0
+    total_text_length: int = 0
+    span_hours: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,38 +74,95 @@ def _timestamp(value: datetime) -> str:
     return value.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _ratio(numerator: int, denominator: int) -> float:
-    return max(0.0, numerator / max(1, denominator))
+def _ratio(numerator: int | float, denominator: int | float) -> float:
+    return max(0.0, float(numerator) / max(1.0, float(denominator)))
 
 
 def _bounded(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
     return max(minimum, min(maximum, value))
 
 
-def _run_score(metrics: ChannelMetrics, settings: ChannelQualityConfig) -> float:
+def _bayesian_ratio(successes: int, failures: int, settings: ChannelQualityConfig) -> float:
+    return _ratio(
+        successes + settings.xray_prior_successes,
+        successes + failures + settings.xray_prior_successes + settings.xray_prior_failures,
+    )
+
+
+def _average_text_length(metrics: ChannelMetrics) -> float:
+    return _ratio(metrics.total_text_length, metrics.fresh_posts)
+
+
+def _text_depth(metrics: ChannelMetrics) -> float:
+    average_length = _average_text_length(metrics)
+    return _bounded((average_length - 24.0) / 176.0)
+
+
+def _cadence_score(metrics: ChannelMetrics) -> float:
+    if metrics.fresh_posts <= 0:
+        return 0.0
+    effective_window_hours = max(24.0, metrics.span_hours if metrics.span_hours > 0 else 24.0)
+    posts_per_day = metrics.fresh_posts * 24.0 / effective_window_hours
+    if posts_per_day < 1.0:
+        return posts_per_day
+    if posts_per_day <= 12.0:
+        return 1.0
+    if posts_per_day >= 48.0:
+        return 0.0
+    return _bounded(1.0 - (posts_per_day - 12.0) / 36.0)
+
+
+def _component_weights(settings: ChannelQualityConfig) -> dict[str, float]:
+    return {
+        "activity": settings.activity_weight,
+        "supported_yield": settings.supported_yield_weight,
+        "static_security": settings.static_security_weight,
+        "uniqueness": settings.uniqueness_weight,
+        "nonduplication": settings.nonduplication_weight,
+        "profile_coverage": settings.profile_coverage_weight,
+        "text_depth": settings.text_depth_weight,
+        "cadence": settings.cadence_weight,
+        "xray": settings.xray_weight,
+        "history": settings.history_weight,
+    }
+
+
+def _run_score(
+    metrics: ChannelMetrics,
+    cumulative_xray_successes: int,
+    cumulative_xray_failures: int,
+    settings: ChannelQualityConfig,
+) -> float:
     activity = min(1.0, _ratio(metrics.fresh_posts, settings.min_fresh_posts))
     supported_yield = _ratio(metrics.supported_candidates, metrics.all_uri_candidates)
     static_security = _ratio(metrics.static_accepted, metrics.supported_candidates)
     uniqueness = _ratio(metrics.unique_profiles, metrics.static_accepted)
     nonduplication = (
         1.0
-        if metrics.fresh_posts < 2
-        else _bounded(1.0 - _ratio(metrics.duplicate_posts, metrics.fresh_posts))
+        if metrics.supported_candidates < 2
+        else _bounded(1.0 - _ratio(metrics.duplicate_posts, metrics.supported_candidates))
     )
+    profile_coverage = _ratio(metrics.posts_with_profiles, metrics.fresh_posts)
     xray_total = metrics.xray_passed + metrics.xray_failed
-    xray_result = _ratio(
-        metrics.xray_passed + settings.xray_prior_successes,
-        xray_total + settings.xray_prior_successes + settings.xray_prior_failures,
-    )
-    return round(
-        activity * settings.activity_weight
-        + supported_yield * settings.supported_yield_weight
-        + static_security * settings.static_security_weight
-        + uniqueness * settings.uniqueness_weight
-        + nonduplication * settings.nonduplication_weight
-        + xray_result * settings.xray_weight,
-        2,
-    )
+    current_xray = _bayesian_ratio(metrics.xray_passed, metrics.xray_failed, settings)
+    history_xray = _bayesian_ratio(cumulative_xray_successes, cumulative_xray_failures, settings)
+    blended_xray = 0.45 * current_xray + 0.55 * history_xray if xray_total or cumulative_xray_successes or cumulative_xray_failures else current_xray
+    components = {
+        "activity": activity,
+        "supported_yield": supported_yield,
+        "static_security": static_security,
+        "uniqueness": uniqueness,
+        "nonduplication": nonduplication,
+        "profile_coverage": profile_coverage,
+        "text_depth": _text_depth(metrics),
+        "cadence": _cadence_score(metrics),
+        "xray": blended_xray,
+        "history": history_xray,
+    }
+    weights = _component_weights(settings)
+    weight_total = sum(weights.values()) or 1.0
+    score = sum(components[key] * weights[key] for key in weights) / weight_total * 100.0
+    return round(score, 2)
 
 
 def _history_retention(
@@ -121,13 +181,37 @@ def _history_retention(
 def _confidence(
     metrics: ChannelMetrics,
     evidence_runs: int,
+    cumulative_xray_successes: int,
+    cumulative_xray_failures: int,
     settings: ChannelQualityConfig,
 ) -> float:
     evidence = min(1.0, evidence_runs / settings.min_evidence_runs)
     activity = min(1.0, metrics.fresh_posts / settings.min_fresh_posts)
-    xray_total = metrics.xray_passed + metrics.xray_failed
-    xray = min(1.0, xray_total / settings.min_supported_candidates)
-    return round(0.5 * evidence + 0.3 * activity + 0.2 * xray, 4)
+    coverage = _ratio(metrics.posts_with_profiles, metrics.fresh_posts)
+    xray_observations = min(
+        1.0,
+        _ratio(
+            cumulative_xray_successes + cumulative_xray_failures,
+            settings.min_supported_candidates * settings.min_evidence_runs,
+        ),
+    )
+    reliability = _bayesian_ratio(cumulative_xray_successes, cumulative_xray_failures, settings)
+    return round(
+        0.3 * evidence + 0.2 * activity + 0.15 * coverage + 0.15 * xray_observations + 0.2 * reliability,
+        4,
+    )
+
+
+def _required_score(
+    confidence: float,
+    cumulative_xray_successes: int,
+    cumulative_xray_failures: int,
+    settings: ChannelQualityConfig,
+) -> float:
+    reliability = _bayesian_ratio(cumulative_xray_successes, cumulative_xray_failures, settings)
+    adaptive_shift = (0.5 - reliability) * settings.history_weight
+    required = settings.approval_score + (1.0 - confidence) * settings.new_channel_margin + adaptive_shift
+    return round(_bounded(required, 0.0, 100.0), 2)
 
 
 def evaluate_channel(
@@ -155,19 +239,33 @@ def evaluate_channel(
         )
 
     evidence_runs = (previous.evidence_runs if previous is not None else 0) + 1
-    run_score = _run_score(metrics, settings)
-    xray_successes = (previous.xray_successes if previous is not None else 0) + metrics.xray_passed
-    xray_failures = (previous.xray_failures if previous is not None else 0) + metrics.xray_failed
-    confidence = _confidence(metrics, evidence_runs, settings)
-    required_score = round(
-        settings.approval_score + (1.0 - confidence) * settings.new_channel_margin,
-        2,
+    cumulative_xray_successes = (previous.xray_successes if previous is not None else 0) + metrics.xray_passed
+    cumulative_xray_failures = (previous.xray_failures if previous is not None else 0) + metrics.xray_failed
+    confidence = _confidence(
+        metrics,
+        evidence_runs,
+        cumulative_xray_successes,
+        cumulative_xray_failures,
+        settings,
+    )
+    required_score = _required_score(
+        confidence,
+        cumulative_xray_successes,
+        cumulative_xray_failures,
+        settings,
+    )
+    run_score = _run_score(
+        metrics,
+        cumulative_xray_successes,
+        cumulative_xray_failures,
+        settings,
     )
 
     if previous is None or (previous.status == "excluded" and run_score >= required_score):
         score = run_score
     else:
         retention = _history_retention(previous, observed_at, settings.history_half_life_hours)
+        retention *= _bounded(1.0 - confidence * 0.5, 0.2, 0.9)
         score = round(previous.score * retention + run_score * (1.0 - retention), 2)
 
     if evidence_runs < settings.min_evidence_runs:
@@ -182,15 +280,21 @@ def evaluate_channel(
     elif confidence < settings.minimum_confidence:
         status = "watch"
         reason = "insufficient_confidence"
-    elif xray_successes < 1:
+    elif cumulative_xray_successes < 1:
         status = "watch"
         reason = "no_xray_success"
     elif score >= required_score:
         status = "approved"
         reason = "approved"
     else:
-        status = "excluded"
-        reason = "below_approval_score"
+        shortfall = required_score - score
+        improving = previous is not None and score > previous.score
+        if shortfall <= settings.near_threshold_margin or improving:
+            status = "watch"
+            reason = "near_threshold"
+        else:
+            status = "excluded"
+            reason = "below_approval_score"
 
     return ChannelEvaluation(
         handle=handle,
@@ -202,6 +306,6 @@ def evaluate_channel(
         first_seen_at=previous.first_seen_at if previous is not None else timestamp,
         confidence=confidence,
         required_score=required_score,
-        xray_successes=xray_successes,
-        xray_failures=xray_failures,
+        xray_successes=cumulative_xray_successes,
+        xray_failures=cumulative_xray_failures,
     )

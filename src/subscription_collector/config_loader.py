@@ -106,7 +106,12 @@ class ChannelQualityConfig:
     static_security_weight: float = 25.0
     uniqueness_weight: float = 15.0
     nonduplication_weight: float = 10.0
+    profile_coverage_weight: float = 10.0
+    text_depth_weight: float = 5.0
+    cadence_weight: float = 5.0
     xray_weight: float = 10.0
+    history_weight: float = 15.0
+    near_threshold_margin: float = 8.0
 
 
 @dataclass(frozen=True)
@@ -357,7 +362,12 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
             "static_security_weight",
             "uniqueness_weight",
             "nonduplication_weight",
+            "profile_coverage_weight",
+            "text_depth_weight",
+            "cadence_weight",
             "xray_weight",
+            "history_weight",
+            "near_threshold_margin",
         },
     )
 
@@ -398,7 +408,14 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
         nonduplication_weight=_number(
             section, "nonduplication_weight", "telegram.quality", 0.0
         ),
+        profile_coverage_weight=_number(
+            section, "profile_coverage_weight", "telegram.quality", 0.0
+        ),
+        text_depth_weight=_number(section, "text_depth_weight", "telegram.quality", 0.0),
+        cadence_weight=_number(section, "cadence_weight", "telegram.quality", 0.0),
         xray_weight=_number(section, "xray_weight", "telegram.quality", 0.0),
+        history_weight=_number(section, "history_weight", "telegram.quality", 0.0),
+        near_threshold_margin=bounded("near_threshold_margin", 0.0, 100.0),
     )
 
 
@@ -508,7 +525,12 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
                 "static_security_weight": config.telegram.quality.static_security_weight,
                 "uniqueness_weight": config.telegram.quality.uniqueness_weight,
                 "nonduplication_weight": config.telegram.quality.nonduplication_weight,
+                "profile_coverage_weight": config.telegram.quality.profile_coverage_weight,
+                "text_depth_weight": config.telegram.quality.text_depth_weight,
+                "cadence_weight": config.telegram.quality.cadence_weight,
                 "xray_weight": config.telegram.quality.xray_weight,
+                "history_weight": config.telegram.quality.history_weight,
+                "near_threshold_margin": config.telegram.quality.near_threshold_margin,
             },
         },
     }

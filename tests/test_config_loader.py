@@ -73,7 +73,12 @@ telegram:
     static_security_weight: 25.0
     uniqueness_weight: 15.0
     nonduplication_weight: 10.0
+    profile_coverage_weight: 10.0
+    text_depth_weight: 5.0
+    cadence_weight: 5.0
     xray_weight: 10.0
+    history_weight: 15.0
+    near_threshold_margin: 8.0
 """.lstrip()
         + extra,
         encoding="utf-8",
@@ -118,6 +123,11 @@ def test_load_config_reads_all_runtime_settings(tmp_path: Path) -> None:
     assert config.behavior.strict_first_seen is True
     assert config.behavior.fail_on_empty is False
     assert config.xray.version == "v26.3.27"
+    assert config.telegram.quality.profile_coverage_weight == 10.0
+    assert config.telegram.quality.text_depth_weight == 5.0
+    assert config.telegram.quality.cadence_weight == 5.0
+    assert config.telegram.quality.history_weight == 15.0
+    assert config.telegram.quality.near_threshold_margin == 8.0
 
 
 def test_load_config_rejects_missing_or_invalid_required_values(tmp_path: Path) -> None:

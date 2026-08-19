@@ -171,3 +171,29 @@ def test_extract_telegram_handles_from_all_supported_subscription_protocols() ->
         handles.update(extract_telegram_handles(profile))
 
     assert handles == {"vless_channel", "trojan_channel", "hy2_channel", "hysteria_channel"}
+
+
+def test_extract_telegram_handles_reads_query_values_and_base64_wrapped_metadata() -> None:
+    raw = (
+        "vless://id@edge.example:443?security=tls&remarks=%40Query_Channel"
+        "#aHR0cHM6Ly90Lm1lL0Jhc2U2NF9DaGFubmVs"
+    )
+
+    assert extract_telegram_handles(raw) == {"query_channel", "base64_channel"}
+
+
+
+def test_parse_preview_posts_reads_script_timestamp_and_caption_profiles() -> None:
+    html = """
+    <div class="tgme_widget_message" data-post="channel_name/27">
+      <div class="tgme_widget_message_caption">
+        <code>trojan://from-caption</code>
+      </div>
+      <script type="application/ld+json">{"datePublished": "2026-08-15T11:15:00Z"}</script>
+    </div>
+    """
+
+    posts = parse_preview_posts(html, "channel_name", NOW, 24)
+
+    assert [post.message_id for post in posts] == ["27"]
+    assert extract_profile_uris(posts) == ["trojan://from-caption"]

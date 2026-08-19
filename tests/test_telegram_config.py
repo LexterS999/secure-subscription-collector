@@ -25,3 +25,8 @@ def test_default_config_exposes_public_preview_window_without_profile_limit() ->
     assert config.telegram.quality.history_half_life_hours == 72.0
     assert config.telegram.quality.xray_prior_successes == 1.0
     assert config.telegram.quality.xray_prior_failures == 1.0
+    assert config.telegram.quality.profile_coverage_weight == 10.0
+    assert config.telegram.quality.text_depth_weight == 5.0
+    assert config.telegram.quality.cadence_weight == 5.0
+    assert config.telegram.quality.history_weight == 15.0
+    assert config.telegram.quality.near_threshold_margin == 8.0

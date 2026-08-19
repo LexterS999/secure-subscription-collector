@@ -35,7 +35,11 @@ async def _fetch_one(
         try:
             request_url = url
             for redirect_count in range(settings.max_redirects + 1):
-                response = await client.get(request_url, follow_redirects=False)
+                response = await client.get(
+                    request_url,
+                    follow_redirects=False,
+                    timeout=settings.timeout_seconds,
+                )
                 if response.is_redirect:
                     location = response.headers.get("Location")
                     if redirect_count == settings.max_redirects:
@@ -112,7 +116,11 @@ async def _fetch_telegram_preview(
         try:
             request_url = request_url or source_url
             for redirect_count in range(settings.max_redirects + 1):
-                response = await client.get(request_url, follow_redirects=False)
+                response = await client.get(
+                    request_url,
+                    follow_redirects=False,
+                    timeout=settings.timeout_seconds,
+                )
                 if response.is_redirect:
                     location = response.headers.get("Location")
                     if redirect_count == settings.max_redirects:
