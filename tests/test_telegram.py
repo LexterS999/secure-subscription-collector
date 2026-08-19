@@ -60,6 +60,12 @@ def test_extract_profile_uris_supports_only_project_protocols() -> None:
     assert extract_profile_uris(posts) == ["vless://recent-text", "trojan://recent-href"]
 
 
+def test_extract_telegram_handles_ignores_invalid_ipv6_url_syntax() -> None:
+    raw = "vless://user@[broken:443?remarks=%40Safe_Channel"
+
+    assert extract_telegram_handles(raw) == {"safe_channel"}
+
+
 def test_extract_telegram_handles_decodes_html_entities_inside_supported_uri() -> None:
     raw = (
         "trojan://password@example.org:443?security=tls&sni=www.example.org"
@@ -180,7 +186,6 @@ def test_extract_telegram_handles_reads_query_values_and_base64_wrapped_metadata
     )
 
     assert extract_telegram_handles(raw) == {"query_channel", "base64_channel"}
-
 
 
 def test_parse_preview_posts_reads_script_timestamp_and_caption_profiles() -> None:

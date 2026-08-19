@@ -186,7 +186,10 @@ def _boolean(section: dict[str, Any], key: str, location: str) -> bool:
 def _https_url_value(value: Any, location: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{location} должен быть непустым HTTPS-адресом")
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+    except ValueError as error:
+        raise ConfigError(f"{location} должен быть HTTPS-адресом") from error
     if parsed.scheme != "https" or not parsed.netloc:
         raise ConfigError(f"{location} должен быть HTTPS-адресом")
     return value
@@ -374,9 +377,7 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
     def bounded(key: str, minimum: float, maximum: float) -> float:
         parsed = _number(section, key, "telegram.quality", minimum)
         if parsed > maximum:
-            raise ConfigError(
-                f"telegram.quality.{key} должен быть числом не больше {maximum}"
-            )
+            raise ConfigError(f"telegram.quality.{key} должен быть числом не больше {maximum}")
         return parsed
 
     return ChannelQualityConfig(
@@ -391,23 +392,13 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
         history_half_life_hours=_number(
             section, "history_half_life_hours", "telegram.quality", 0.000001
         ),
-        xray_prior_successes=_number(
-            section, "xray_prior_successes", "telegram.quality", 0.0
-        ),
-        xray_prior_failures=_number(
-            section, "xray_prior_failures", "telegram.quality", 0.0
-        ),
+        xray_prior_successes=_number(section, "xray_prior_successes", "telegram.quality", 0.0),
+        xray_prior_failures=_number(section, "xray_prior_failures", "telegram.quality", 0.0),
         activity_weight=_number(section, "activity_weight", "telegram.quality", 0.0),
-        supported_yield_weight=_number(
-            section, "supported_yield_weight", "telegram.quality", 0.0
-        ),
-        static_security_weight=_number(
-            section, "static_security_weight", "telegram.quality", 0.0
-        ),
+        supported_yield_weight=_number(section, "supported_yield_weight", "telegram.quality", 0.0),
+        static_security_weight=_number(section, "static_security_weight", "telegram.quality", 0.0),
         uniqueness_weight=_number(section, "uniqueness_weight", "telegram.quality", 0.0),
-        nonduplication_weight=_number(
-            section, "nonduplication_weight", "telegram.quality", 0.0
-        ),
+        nonduplication_weight=_number(section, "nonduplication_weight", "telegram.quality", 0.0),
         profile_coverage_weight=_number(
             section, "profile_coverage_weight", "telegram.quality", 0.0
         ),

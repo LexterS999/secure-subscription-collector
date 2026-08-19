@@ -146,7 +146,11 @@ def _run_score(
     xray_total = metrics.xray_passed + metrics.xray_failed
     current_xray = _bayesian_ratio(metrics.xray_passed, metrics.xray_failed, settings)
     history_xray = _bayesian_ratio(cumulative_xray_successes, cumulative_xray_failures, settings)
-    blended_xray = 0.45 * current_xray + 0.55 * history_xray if xray_total or cumulative_xray_successes or cumulative_xray_failures else current_xray
+    blended_xray = (
+        0.45 * current_xray + 0.55 * history_xray
+        if xray_total or cumulative_xray_successes or cumulative_xray_failures
+        else current_xray
+    )
     components = {
         "activity": activity,
         "supported_yield": supported_yield,
@@ -196,10 +200,14 @@ def _confidence(
         ),
     )
     reliability = _bayesian_ratio(cumulative_xray_successes, cumulative_xray_failures, settings)
-    return round(
-        0.3 * evidence + 0.2 * activity + 0.15 * coverage + 0.15 * xray_observations + 0.2 * reliability,
-        4,
+    confidence = (
+        0.3 * evidence
+        + 0.2 * activity
+        + 0.15 * coverage
+        + 0.15 * xray_observations
+        + 0.2 * reliability
     )
+    return round(confidence, 4)
 
 
 def _required_score(
@@ -210,7 +218,9 @@ def _required_score(
 ) -> float:
     reliability = _bayesian_ratio(cumulative_xray_successes, cumulative_xray_failures, settings)
     adaptive_shift = (0.5 - reliability) * settings.history_weight
-    required = settings.approval_score + (1.0 - confidence) * settings.new_channel_margin + adaptive_shift
+    required = (
+        settings.approval_score + (1.0 - confidence) * settings.new_channel_margin + adaptive_shift
+    )
     return round(_bounded(required, 0.0, 100.0), 2)
 
 
@@ -239,8 +249,12 @@ def evaluate_channel(
         )
 
     evidence_runs = (previous.evidence_runs if previous is not None else 0) + 1
-    cumulative_xray_successes = (previous.xray_successes if previous is not None else 0) + metrics.xray_passed
-    cumulative_xray_failures = (previous.xray_failures if previous is not None else 0) + metrics.xray_failed
+    cumulative_xray_successes = (
+        previous.xray_successes if previous is not None else 0
+    ) + metrics.xray_passed
+    cumulative_xray_failures = (
+        previous.xray_failures if previous is not None else 0
+    ) + metrics.xray_failed
     confidence = _confidence(
         metrics,
         evidence_runs,

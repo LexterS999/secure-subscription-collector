@@ -30,7 +30,9 @@ _GENERIC_PROFILE_URI = re.compile(
     re.IGNORECASE,
 )
 _BASE64_TOKEN = re.compile(r"[A-Za-z0-9_+/=-]{16,}")
-_EMBEDDED_BASE64_TOKEN = re.compile(r"(?<![A-Za-z0-9_+/=-])([A-Za-z0-9_+/=-]{24,})(?![A-Za-z0-9_+/=-])")
+_EMBEDDED_BASE64_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_+/=-])([A-Za-z0-9_+/=-]{24,})(?![A-Za-z0-9_+/=-])"
+)
 _DATEISH_KEY = re.compile(r"(?:date|time|timestamp)", re.IGNORECASE)
 _ISO_TEXT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})")
 _UNIX_TEXT = re.compile(r"(?<!\d)(\d{10}|\d{13})(?!\d)")
@@ -91,24 +93,31 @@ def _decoded_text_variants(value: str, *, max_depth: int = 2) -> Iterator[str]:
         if depth >= max_depth:
             continue
 
-        parsed = urlsplit(candidate)
-        component_candidates = [parsed.path, parsed.fragment, parsed.query]
-        component_candidates.extend(value for _, value in parse_qsl(parsed.query, keep_blank_values=True))
-        if parsed.fragment:
-            fragment_query = parsed.fragment.split("?", 1)
-            if len(fragment_query) == 2:
-                component_candidates.extend(
-                    value for _, value in parse_qsl(fragment_query[1], keep_blank_values=True)
-                )
-        for component in component_candidates:
-            normalized = unescape(unquote(component))
-            if normalized and normalized not in seen:
-                queue.append((normalized, depth + 1))
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            component_candidates = [parsed.path, parsed.fragment, parsed.query]
+            component_candidates.extend(
+                value for _, value in parse_qsl(parsed.query, keep_blank_values=True)
+            )
+            if parsed.fragment:
+                fragment_query = parsed.fragment.split("?", 1)
+                if len(fragment_query) == 2:
+                    component_candidates.extend(
+                        value for _, value in parse_qsl(fragment_query[1], keep_blank_values=True)
+                    )
+            for component in component_candidates:
+                normalized = unescape(unquote(component))
+                if normalized and normalized not in seen:
+                    queue.append((normalized, depth + 1))
 
         if (decoded := _strict_base64_text(candidate)) is not None and decoded not in seen:
             queue.append((decoded, depth + 1))
         for token in _EMBEDDED_BASE64_TOKEN.findall(candidate):
-            if (decoded_token := _strict_base64_text(token)) is not None and decoded_token not in seen:
+            decoded_token = _strict_base64_text(token)
+            if decoded_token is not None and decoded_token not in seen:
                 queue.append((decoded_token, depth + 1))
 
 

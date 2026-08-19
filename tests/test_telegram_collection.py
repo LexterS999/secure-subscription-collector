@@ -104,8 +104,7 @@ SAFE_TROJAN = (
     "?security=tls&sni=www.example.com&fp=chrome&type=tcp#preview-trojan"
 )
 SAFE_HYSTERIA2 = (
-    "hy2://correct-horse@hy2.example.org:443"
-    "?security=tls&sni=www.example.com&alpn=h3#preview-hy2"
+    "hy2://correct-horse@hy2.example.org:443?security=tls&sni=www.example.com&alpn=h3#preview-hy2"
 )
 
 

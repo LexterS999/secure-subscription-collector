@@ -145,6 +145,20 @@ def test_load_config_rejects_missing_or_invalid_required_values(tmp_path: Path) 
         load_config(tmp_path / "missing.yaml")
 
 
+def test_load_config_normalizes_malformed_https_url_to_config_error(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "https://ifconfig.example/ip", "https://[broken"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="ip_validation.ip_echo_urls"):
+        load_config(config_path)
+
+
 def test_validate_config_rejects_invalid_runtime_override(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)

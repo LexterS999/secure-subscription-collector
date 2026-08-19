@@ -384,7 +384,8 @@ async def run_collection(
         all_candidate_uris = extract_candidate_profile_uris(handle_posts)
         per_post_profile_counts = [len(extract_profile_uris([post])) for post in handle_posts]
         published_at_values = [
-            datetime.fromisoformat(post.published_at.replace("Z", "+00:00")) for post in handle_posts
+            datetime.fromisoformat(post.published_at.replace("Z", "+00:00"))
+            for post in handle_posts
         ]
         span_hours = 0.0
         if len(published_at_values) >= 2:

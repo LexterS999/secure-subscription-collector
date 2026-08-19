@@ -143,9 +143,7 @@ def test_adaptive_quality_increases_after_successful_xray_observation() -> None:
     )
 
     first = evaluate_channel("quality_channel", failed, None, SETTINGS, NOW)
-    second = evaluate_channel(
-        "quality_channel", recovered, first.to_state_record(), SETTINGS, NOW
-    )
+    second = evaluate_channel("quality_channel", recovered, first.to_state_record(), SETTINGS, NOW)
 
     assert second.score > first.score
     assert second.confidence >= first.confidence
