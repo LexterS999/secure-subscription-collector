@@ -4,9 +4,7 @@
 @bisto4_service
 @chillguy_vpn
 @lonup_m
-@mtmvpn
 @networld_vpn
 @outlinereleasedkey
 @red2ray
-@techbod
 @tgrvpn
