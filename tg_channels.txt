@@ -1,4 +1,3 @@
-@aarazv2ray
 @alpha_v2rayip
 @azaranv2ray
 @bisto4_service
@@ -7,4 +6,4 @@
 @networld_vpn
 @outlinereleasedkey
 @red2ray
-@tgrvpn
+@v2rayng_ip

@@ -1,5 +1,6 @@
-hysteria2://083417772bc618cd61f0cca23dd91680@gorbachev-new-th.kvnfreetest.uk:55443?insecure=0&sni=gorbachev-new-th.kvnfreetest.uk#HY2-TLS-UDP-ePAIo2
-hysteria2://865e271f7c97b549b024255c9d02cebe9cc0c2c070a82b1e11bb11b9cd88dd01@streambox.wwwinternetvideo.click:443?allowInsecure=0&insecure=0&sni=streambox.wwwinternetvideo.click#HY2-TLS-UDP-lR7gX1
-hysteria2://2691cbe7c20cced8b0aeb12c812d09077e5b3eec7669fb8f@replay.wwwinternetvideo.click:443?allowInsecure=0&insecure=0&sni=replay.wwwinternetvideo.click#HY2-TLS-UDP-6MP6Xa
-hysteria2://p7Q76LzlnS4hIzr1W3staBOnUe_WwSkR@130.49.161.70:443?insecure=0&security=tls&sni=hy2.aspidnet.xyz&obfs=salamander&obfs-password=rG07s3COMIEvdnQipRyWzx_H_2xygNC3#HY2-TLS-UDP-mnsNo4
-hysteria2://6aab8efdf13945829ae3699c342be406@31.76.80.69:443?insecure=0&security=tls&sni=fiproxy1.lockdwn.com&obfs=salamander&obfs-password=uw9b2qq5rx#HY2-TLS-UDP-lvUsZ5
+hysteria2://6aab8efdf13945829ae3699c342be406@fiproxy1.lockdwn.com:443?sni=fiproxy1.lockdwn.com&obfs=salamander&obfs-password=uw9b2qq5rx#HY2-TLS-UDP-pglxmk
+hy2://53c76647-14d1-4df5-99cb-be99ad2e6bd9@fr194.mechvpn.online:443/?sni=fr194.mechvpn.online#HY2-TLS-UDP-LUVryY
+hysteria2://5ca83936-136d-4314-8453-4ba10a86cf60@31.76.70.78:8443/?sni=quic.tyr-agentstvo.tech#HY2-TLS-UDP-9gINmL
+hysteria2://53c76647-14d1-4df5-99cb-be99ad2e6bd9@82.22.41.10:443?sni=pl10.mechvpn.online#HY2-TLS-UDP-LCtl4Y
+hysteria2://s0_sdK93x9wer_D02Lz9cvK3_Sa014Oakl_C2z@46.229.243.133:8443?sni=grape-turbo-fr.roxa.org#HY2-TLS-UDP-FHRBAi
+hysteria2://74fbbe74-906d-45a8-a27c-a85fc758bc9f@31.76.70.78:8443?sni=quic.tyr-agentstvo.tech#HY2-TLS-UDP-jrLVJE

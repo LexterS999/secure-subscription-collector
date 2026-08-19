@@ -1,5 +1,3 @@
-@aarazv2ray
-@ahuranetchannel
 @ai_duet
 @alfred_config
 @alo_v2rayng
@@ -14,7 +12,6 @@
 @arshiavpn12
 @artemis_vpn_free
 @arv2ray
-@arvand_soul
 @asintech
 @azadi_az_inja_migzare
 @azadmarz
@@ -64,7 +61,6 @@
 @diamondproxytm
 @directvpn
 @dy_gt
-@dynamite_vpn
 @earnmoney_arz
 @easy_free_vpn
 @ehsawn8
@@ -85,7 +81,6 @@
 @filembad
 @filtershekan_channel
 @flyv2ray
-@forimarketgp
 @fr33c0nfig
 @freakconfig
 @free1_vpn
@@ -112,13 +107,11 @@
 @hex_proxy
 @hi_proxy_iran
 @hollowcon
-@hooshemasnui
 @hope_net
 @hosseinstore_za
 @hqv2rayng
 @icv2ray
 @inetchnl
-@infotech_vk7
 @injastvpn
 @internet_azad_2026
 @iproxychannel
@@ -132,7 +125,6 @@
 @jiedianf
 @jokerv2ray
 @kafing_2
-@kapsolvpn
 @kesslervpn
 @kia_net
 @kilid_stor
@@ -165,13 +157,11 @@
 @miov2ray
 @mitivpn
 @mooon_forsin
-@mooon_proxy
 @mpproxy
 @mrmeshkychannel
 @mrvpn1403
 @msv2raynp
 @mtmvpn
-@mtproto_proserver
 @mtproxy22_v2ray
 @musiclovers85
 @mxlshare
@@ -181,7 +171,6 @@
 @narcod_ping1
 @nepo_v2ray
 @net2ray
-@netflowtools
 @netfreedom0
 @netlivpn
 @netmellianti
@@ -189,7 +178,6 @@
 @networld_vpn
 @new_proxy_channel
 @newsdarya
-@nexvexo
 @nim_vpn_ir
 @nn_vpn
 @nodpai
@@ -199,7 +187,6 @@
 @novinology
 @noxtunnel
 @nufilter
-@oliver_soul
 @oneclickvpnkeys
 @openfre
 @opengatevpn_bot
@@ -208,7 +195,6 @@
 @outline_one_clickbot
 @outline_vpn
 @outlinereleasedkey
-@pirimod
 @planb_net
 @ppal03
 @privatevpns
@@ -227,7 +213,6 @@
 @raiv2mmr
 @rayan_config
 @raydikalx
-@rayhub_ir
 @rayng_fast
 @realvpnmaster
 @red2ray
@@ -236,7 +221,6 @@
 @ripaojiedian
 @rjsxrd
 @rostunnel
-@saministamm
 @scdevnetwork
 @selinc
 @serverv2ray00
@@ -253,16 +237,12 @@
 @spotfyhits
 @sylphnet
 @tanhanet
-@techbod
 @tehranargo
 @teleproxytele
-@tgrvpn
 @tootffarangi
 @tootffarangi_tootfarangi
 @tootffarangi_tootffarangi
-@trower_news
 @unlimiteddev
-@v2_mod_shop
 @v2all
 @v2dogs_n
 @v2fetch
@@ -271,7 +251,6 @@
 @v2ra_config
 @v2ray313
 @v2ray_configs_pools
-@v2ray_confiig
 @v2ray_hub1200
 @v2ray_ng
 @v2ray_official
@@ -281,7 +260,6 @@
 @v2raybaaz
 @v2raybazi
 @v2rayconfigamir
-@v2raygulf
 @v2rayi_net
 @v2rayng
 @v2rayng3
@@ -291,17 +269,11 @@
 @v2rayng_market_1378_bot
 @v2rayng_matsuri
 @v2rayngsupbot
-@v2rayngzendegimamad
-@v2rayscollector
-@v2raysup0
 @v2raytz
 @v2rayyngvpn
 @v2reya88
-@vasl_b
-@vasl_bashim
 @vegaas_vpn
 @vegaas_vpn2
-@vip_member_vpn
 @vip_security
 @vipv2rayngnp
 @vistav2ray
@@ -319,10 +291,8 @@
 @vpncustomize
 @vpnine1
 @vpnlime
-@vpnmaan
 @vpnsal
 @vpnserverrr
-@w570w
 @wangcai2
 @wlrustg
 @youtubeunblockru
