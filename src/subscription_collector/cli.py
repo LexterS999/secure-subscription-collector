@@ -202,7 +202,6 @@ async def run_collection(
                 continue
             for line in extract_candidate_lines(source.text):
                 telegram_handles.update(extract_telegram_handles(line))
-        telegram_handles.update(_load_telegram_registry(paths.telegram_registry_path))
         if telegram_handles:
             telegram_posts = await fetch_recent_telegram_posts(
                 sorted(telegram_handles), active_client, started_at, config.telegram

@@ -43,7 +43,10 @@ def test_public_preview_profiles_share_xray_validation_and_approve_quality_chann
 ) -> None:
     """Catch a Telegram path that bypasses filtering or never writes its quality outcome."""
 
+    probed_source_urls: list[str] = []
+
     async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
+        probed_source_urls.extend(profile.source_url for profile in profiles)
         return [ProbeResult(True, 1, 8) for _ in profiles]
 
     monkeypatch.setattr(cli, "probe_batch", validated)
@@ -92,6 +95,8 @@ def test_public_preview_profiles_share_xray_validation_and_approve_quality_chann
         in "\n".join(record.getMessage() for record in caplog.records)
     )
     assert "https://t.me/s/quality_channel" in requests
+    assert len(probed_source_urls) == 4
+    assert set(probed_source_urls) == {"https://t.me/s/quality_channel"}
 
 
 SAFE_TROJAN = (
@@ -161,3 +166,31 @@ def test_public_preview_publishes_all_supported_protocols_only_from_telegram(
     assert hysteria2_output.count("\n") == 1
     assert "323e4567-e89b-12d3-a456-426614174000" not in vless_output
     assert "123e4567-e89b-12d3-a456-426614174000" in vless_output
+
+
+def test_collection_does_not_fetch_registry_only_channel_without_current_subscription_handle(
+    tmp_path: Path,
+    config_for,
+) -> None:
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("https://seed.example/no-channel\n", encoding="utf-8")
+    registry_path = tmp_path / "tg_registry.txt"
+    registry_path.write_text("@registry_only_channel\n", encoding="utf-8")
+    config = config_for(input_path=input_path, telegram_registry_path=registry_path)
+    direct_profile = SAFE_VLESS.replace("#preview", "#without_channel")
+    requested_hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_hosts.append(request.url.host or "")
+        if request.url.host == "seed.example":
+            return httpx.Response(200, text=direct_profile)
+        raise AssertionError(f"registry channel must not be fetched: {request.url}")
+
+    async def exercise() -> int:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_collection(config=config, client=client)
+
+    assert asyncio.run(exercise()) == 0
+    assert requested_hosts == ["seed.example"]
+    assert (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8") == ""
+    assert registry_path.read_text(encoding="utf-8") == ""
