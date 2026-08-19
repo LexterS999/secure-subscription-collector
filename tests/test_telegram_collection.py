@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -38,6 +39,7 @@ def test_public_preview_profiles_share_xray_validation_and_approve_quality_chann
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     config_for,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Catch a Telegram path that bypasses filtering or never writes its quality outcome."""
 
@@ -68,6 +70,7 @@ def test_public_preview_profiles_share_xray_validation_and_approve_quality_chann
             second = await run_collection(config=config, client=client)
         return first, second
 
+    caplog.set_level(logging.INFO, logger="subscription_collector.cli")
     assert asyncio.run(exercise()) == (0, 0)
     published = (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8")
     report = json.loads(config.paths.report_path.read_text(encoding="utf-8"))
@@ -80,4 +83,81 @@ def test_public_preview_profiles_share_xray_validation_and_approve_quality_chann
     assert "quality_channel" not in config.paths.telegram_state_path.read_text(encoding="utf-8")
     assert report["telegram"]["discovered_channels"] == 1
     assert report["telegram"]["approved_channels"] == 1
+    assert report["telegram"]["uri_candidates"] == 2
+    assert report["telegram"]["static_accepted_profiles"] == 2
+    assert report["telegram"]["unique_profiles"] == 2
+    assert report["telegram"]["xray_passed_profiles"] == 2
+    assert (
+        "Telegram: обнаружено публичных каналов: 1; свежих сообщений: 2; URI-кандидатов: 2."
+        in "\n".join(record.getMessage() for record in caplog.records)
+    )
     assert "https://t.me/s/quality_channel" in requests
+
+
+SAFE_TROJAN = (
+    "trojan://correct-horse@trojan.example.org:443"
+    "?security=tls&sni=www.example.com&fp=chrome&type=tcp#preview-trojan"
+)
+SAFE_HYSTERIA2 = (
+    "hy2://correct-horse@hy2.example.org:443"
+    "?security=tls&sni=www.example.com&alpn=h3#preview-hy2"
+)
+
+
+def test_public_preview_publishes_all_supported_protocols_only_from_telegram(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    config_for,
+) -> None:
+    async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
+        return [ProbeResult(True, 1, 8) for _ in profiles]
+
+    monkeypatch.setattr(cli, "probe_batch", validated)
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("https://seed.example/all-protocols\n", encoding="utf-8")
+    config = config_for(input_path=input_path)
+    direct_vless = SAFE_VLESS.replace(
+        "123e4567-e89b-12d3-a456-426614174000",
+        "323e4567-e89b-12d3-a456-426614174000",
+    ).replace("#preview", "#@all_protocol_channel")
+    direct_trojan = SAFE_TROJAN.replace("#preview-trojan", "#@all_protocol_channel")
+    direct_hysteria2 = SAFE_HYSTERIA2.replace("#preview-hy2", "#@all_protocol_channel")
+    published_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    preview = "\n".join(
+        (
+            '<div class="tgme_widget_message" data-post="all_protocol_channel/3">'
+            f'<div class="tgme_widget_message_text">{SAFE_VLESS}</div>'
+            f'<time datetime="{published_at}"></time></div>',
+            '<div class="tgme_widget_message" data-post="all_protocol_channel/2">'
+            f'<div class="tgme_widget_message_text">{SAFE_TROJAN}</div>'
+            f'<time datetime="{published_at}"></time></div>',
+            '<div class="tgme_widget_message" data-post="all_protocol_channel/1">'
+            f'<div class="tgme_widget_message_text">{SAFE_HYSTERIA2}</div>'
+            f'<time datetime="{published_at}"></time></div>',
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "seed.example":
+            return httpx.Response(
+                200,
+                text="\n".join((direct_vless, direct_trojan, direct_hysteria2)),
+            )
+        if request.url.host == "t.me":
+            return httpx.Response(200, text=preview)
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async def exercise() -> int:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_collection(config=config, client=client)
+
+    assert asyncio.run(exercise()) == 0
+    vless_output = (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8")
+    trojan_output = (config.paths.output_dir / "trojan.txt").read_text(encoding="utf-8")
+    hysteria2_output = (config.paths.output_dir / "hysteria2.txt").read_text(encoding="utf-8")
+
+    assert vless_output.count("\n") == 1
+    assert trojan_output.count("\n") == 1
+    assert hysteria2_output.count("\n") == 1
+    assert "323e4567-e89b-12d3-a456-426614174000" not in vless_output
+    assert "123e4567-e89b-12d3-a456-426614174000" in vless_output

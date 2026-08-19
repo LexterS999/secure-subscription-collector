@@ -196,6 +196,7 @@ async def run_collection(
     active_client = client or default_client(source_settings)
     try:
         sources = await fetch_sources(urls, active_client, started_at, source_settings)
+        telegram_sources: list[SourceResult] = []
         for source in sources:
             if source.text is None:
                 continue
@@ -214,18 +215,27 @@ async def run_collection(
                 telegram_profile_uris[handle] = profile_uris
                 preview_url = canonical_preview_url(handle)
                 telegram_source_urls[preview_url] = handle
-                sources.append(
-                    SourceResult(
-                        preview_url,
-                        Freshness.UNKNOWN,
-                        "\n".join(profile_uris),
-                    )
+                telegram_source = SourceResult(
+                    preview_url,
+                    Freshness.UNKNOWN,
+                    "\n".join(profile_uris),
                 )
+                telegram_sources.append(telegram_source)
+                sources.append(telegram_source)
     finally:
         if owns_client:
             await active_client.aclose()
     telegram_summary["discovered_channels"] = len(telegram_handles)
     telegram_summary["fresh_posts"] = len(telegram_posts)
+    telegram_summary["uri_candidates"] = sum(
+        len(profile_uris) for profile_uris in telegram_profile_uris.values()
+    )
+    logger.info(
+        "Telegram: обнаружено публичных каналов: %d; свежих сообщений: %d; URI-кандидатов: %d.",
+        telegram_summary["discovered_channels"],
+        telegram_summary["fresh_posts"],
+        telegram_summary["uri_candidates"],
+    )
     fetch_duration_ms = _stage_duration_ms(stats, "sources_fetch", fetch_started_at)
     usable_sources = sum(source.text is not None for source in sources)
     logger.info(
@@ -252,9 +262,8 @@ async def run_collection(
                 stats.exclude(source.reason or source.freshness.value)
                 continue
             stats.fetched_sources += 1
-            if source.source_url not in telegram_source_urls:
-                continue
-            lines = extract_candidate_lines(source.text)
+        for source in telegram_sources:
+            lines = extract_candidate_lines(source.text or "")
             stats.candidate_lines += len(lines)
             for batch_start in range(0, len(lines), filter_settings.batch_size):
                 line_batch = lines[batch_start : batch_start + filter_settings.batch_size]
@@ -338,6 +347,10 @@ async def run_collection(
             else:
                 telegram_xray_failed[handle] += 1
 
+    telegram_summary["static_accepted_profiles"] = sum(telegram_static_accepted.values())
+    telegram_summary["unique_profiles"] = sum(telegram_unique_profiles.values())
+    telegram_summary["xray_passed_profiles"] = sum(telegram_xray_passed.values())
+    telegram_summary["xray_failed_profiles"] = sum(telegram_xray_failed.values())
     validation_duration_ms = _stage_duration_ms(stats, "xray_ip_validation", validation_started_at)
     logger.info(
         "Этап «Xray IP-проверка»: завершён за %s — прошли: %d, исключены: %d.",

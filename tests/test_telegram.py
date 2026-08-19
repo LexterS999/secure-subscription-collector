@@ -156,3 +156,18 @@ def test_parse_preview_posts_uses_unix_timestamp_date_fallback() -> None:
     posts = parse_preview_posts(html, "channel_name", NOW, 24)
 
     assert [post.message_id for post in posts] == ["26"]
+
+
+def test_extract_telegram_handles_from_all_supported_subscription_protocols() -> None:
+    profiles = (
+        "vless://id@edge.example:443?security=tls#@Vless_Channel\n"
+        "trojan://password@edge.example:443?security=tls#https://t.me/Trojan_Channel\n"
+        "hy2://password@edge.example:443?security=tls#tg://resolve?domain=Hy2_Channel\n"
+        "hysteria2://password@edge.example:443?security=tls#https://telegram.me/Hysteria_Channel"
+    )
+
+    handles = set()
+    for profile in profiles.splitlines():
+        handles.update(extract_telegram_handles(profile))
+
+    assert handles == {"vless_channel", "trojan_channel", "hy2_channel", "hysteria_channel"}
