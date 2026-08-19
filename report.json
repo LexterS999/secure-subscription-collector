@@ -1,63 +1,63 @@
 {
   "counts": {
-    "accepted_profiles": 27942,
-    "candidate_lines": 68800,
-    "emitted_profiles": 3302,
+    "accepted_profiles": 32213,
+    "candidate_lines": 77977,
+    "emitted_profiles": 3425,
     "excluded": {
-      "config_invalid": 3072,
-      "insecure_flag": 5286,
-      "invalid_or_unsupported": 8,
-      "invalid_reality_key": 26,
-      "missing_fingerprint": 10047,
-      "missing_required_secret": 15418,
-      "missing_security": 7630,
-      "missing_sni": 2411,
-      "no_endpoint_confirmation": 7139,
-      "probe_error": 3,
-      "response_too_large": 2,
-      "unsupported_transport": 32
+      "config_invalid": 5120,
+      "insecure_flag": 6125,
+      "invalid_or_unsupported": 7,
+      "invalid_reality_key": 12,
+      "missing_fingerprint": 10765,
+      "missing_required_secret": 18344,
+      "missing_security": 7663,
+      "missing_sni": 2808,
+      "no_endpoint_confirmation": 7414,
+      "probe_error": 9,
+      "response_too_large": 1,
+      "unsupported_transport": 40
     },
-    "fetched_sources": 24,
+    "fetched_sources": 25,
     "input_sources": 26,
-    "parsed_profiles": 68792,
-    "probed_profiles": 13516,
+    "parsed_profiles": 77970,
+    "probed_profiles": 15968,
     "source_freshness": {
-      "failed": 2,
+      "failed": 1,
       "recent": 1,
-      "unknown": 23
+      "unknown": 24
     },
-    "unique_profiles": 13516,
-    "validated_profiles": 3302
+    "unique_profiles": 15968,
+    "validated_profiles": 3425
   },
-  "generated_at": "2026-08-19T00:44:19Z",
+  "generated_at": "2026-08-19T04:29:02Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 5,
-        "total": 5
+        "new": 22,
+        "total": 22
       },
       "trojan": {
-        "new": 1430,
-        "total": 1430
+        "new": 1617,
+        "total": 1617
       },
       "vless": {
-        "new": 1867,
-        "total": 1867
+        "new": 1786,
+        "total": 1786
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-19T00:44:20+00:00",
+      "last_modified": "2026-08-19T04:29:02+00:00",
       "reason": null
     },
     {
-      "freshness": "failed",
+      "freshness": "unknown",
       "last_modified": null,
-      "reason": "response_too_large"
+      "reason": null
     },
     {
       "freshness": "unknown",
@@ -182,11 +182,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 265,
-    "publication": 189,
-    "sources_fetch": 2778,
-    "static_filter": 4970,
-    "total": 720029,
-    "xray_ip_validation": 711826
+    "deduplication": 382,
+    "publication": 223,
+    "sources_fetch": 758,
+    "static_filter": 7364,
+    "total": 846356,
+    "xray_ip_validation": 837626
   }
 }
