@@ -43,6 +43,7 @@ class PathsConfig:
     telegram_state_path: Path
     telegram_registry_path: Path
     tg_channels_path: Path
+    xray_path: Path
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,23 @@ class SourcesConfig:
 class StaticFilterConfig:
     workers: int
     batch_size: int
+
+
+@dataclass(frozen=True)
+class IpValidationConfig:
+    ip_echo_urls: tuple[str, ...]
+    http_check_urls: tuple[str, ...]
+    accepted_http_statuses: tuple[int, ...]
+    timeout_seconds: float
+    config_test_timeout_seconds: float
+    startup_timeout_seconds: float
+    request_concurrency: int
+    batch_size: int
+    batch_concurrency: int
+    listener_poll_interval_seconds: float
+    process_shutdown_timeout_seconds: float
+    connection_max_connections: int
+    connection_max_keepalive_connections: int
 
 
 @dataclass(frozen=True)
@@ -86,6 +104,9 @@ class ChannelQualityConfig:
     cadence_weight: float = 5.0
     history_weight: float = 15.0
     near_threshold_margin: float = 8.0
+    xray_prior_successes: float = 1.0
+    xray_prior_failures: float = 1.0
+    xray_weight: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -101,12 +122,19 @@ class TelegramConfig:
 
 
 @dataclass(frozen=True)
+class XrayConfig:
+    version: str
+
+
+@dataclass(frozen=True)
 class CollectorConfig:
     paths: PathsConfig
     sources: SourcesConfig
     static_filter: StaticFilterConfig
+    ip_validation: IpValidationConfig
     behavior: BehaviorConfig
     telegram: TelegramConfig
+    xray: XrayConfig
 
 
 def _mapping(value: Any, location: str) -> dict[str, Any]:
