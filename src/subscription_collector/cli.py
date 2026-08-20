@@ -258,7 +258,8 @@ async def run_collection(
     accepted: list[Profile] = []
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=filter_settings.workers) as executor:
-        for source in sources:
+        # Обрабатываем ТОЛЬКО профили из Telegram-каналов, а не из исходных подписок
+        for source in telegram_sources:
             stats.source_freshness[source.freshness.value] = (
                 stats.source_freshness.get(source.freshness.value, 0) + 1
             )
@@ -266,7 +267,6 @@ async def run_collection(
                 stats.exclude(source.reason or source.freshness.value)
                 continue
             stats.fetched_sources += 1
-        for source in telegram_sources:
             lines = extract_candidate_lines(source.text or "")
             stats.candidate_lines += len(lines)
             for batch_start in range(0, len(lines), filter_settings.batch_size):
