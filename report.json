@@ -1,51 +1,47 @@
 {
   "counts": {
-    "accepted_profiles": 3429,
-    "candidate_lines": 15842,
-    "emitted_profiles": 334,
+    "accepted_profiles": 3440,
+    "candidate_lines": 15892,
+    "emitted_profiles": 318,
     "excluded": {
       "config_invalid": 512,
-      "http_error:HTTPStatusError": 2,
-      "insecure_flag": 767,
+      "insecure_flag": 740,
       "invalid_or_unsupported": 19,
       "invalid_reality_key": 3,
-      "missing_fingerprint": 1312,
-      "missing_required_secret": 6555,
-      "missing_security": 2520,
-      "missing_sni": 1231,
-      "no_endpoint_confirmation": 759,
-      "probe_error": 22,
-      "response_too_large": 2,
+      "missing_fingerprint": 1329,
+      "missing_required_secret": 6601,
+      "missing_security": 2529,
+      "missing_sni": 1225,
+      "no_endpoint_confirmation": 787,
+      "probe_error": 11,
       "unsupported_transport": 6
     },
-    "fetched_sources": 369,
+    "fetched_sources": 346,
     "input_sources": 26,
-    "parsed_profiles": 15823,
-    "probed_profiles": 1627,
+    "parsed_profiles": 15873,
+    "probed_profiles": 1628,
     "source_freshness": {
-      "failed": 4,
-      "recent": 1,
-      "unknown": 368
+      "unknown": 346
     },
-    "unique_profiles": 1627,
-    "validated_profiles": 334
+    "unique_profiles": 1628,
+    "validated_profiles": 318
   },
-  "generated_at": "2026-08-20T00:44:14Z",
+  "generated_at": "2026-08-20T01:20:44Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 3,
-        "total": 3
+        "new": 4,
+        "total": 4
       },
       "trojan": {
-        "new": 47,
-        "total": 47
+        "new": 45,
+        "total": 45
       },
       "vless": {
-        "new": 284,
-        "total": 284
+        "new": 269,
+        "total": 269
       }
     }
   },
@@ -1909,33 +1905,28 @@
       "freshness": "unknown",
       "last_modified": null,
       "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
     }
   ],
   "strict_first_seen": false,
   "telegram": {
     "approved_channels": 0,
-    "candidate_channels": 206,
-    "discovered_channels": 347,
-    "excluded_channels": 82,
-    "fresh_posts": 13514,
-    "static_accepted_profiles": 3429,
-    "unique_profiles": 1627,
-    "uri_candidates": 15842,
-    "watch_channels": 59,
-    "xray_failed_profiles": 1293,
-    "xray_passed_profiles": 334
+    "candidate_channels": 201,
+    "discovered_channels": 346,
+    "excluded_channels": 85,
+    "fresh_posts": 13703,
+    "static_accepted_profiles": 3440,
+    "unique_profiles": 1628,
+    "uri_candidates": 15892,
+    "watch_channels": 60,
+    "xray_failed_profiles": 1310,
+    "xray_passed_profiles": 318
   },
   "timing_ms": {
-    "deduplication": 48,
-    "publication": 99,
-    "sources_fetch": 149060,
-    "static_filter": 1608,
-    "total": 230344,
-    "xray_ip_validation": 64357
+    "deduplication": 47,
+    "publication": 113,
+    "sources_fetch": 149469,
+    "static_filter": 1628,
+    "total": 231608,
+    "xray_ip_validation": 64913
   }
 }
