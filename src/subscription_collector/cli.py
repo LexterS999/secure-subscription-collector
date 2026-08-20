@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -13,30 +12,18 @@ from time import perf_counter
 
 import httpx
 
-from .channel_quality import ChannelMetrics, evaluate_channel
-from .channel_state import (
-    channel_state_key,
-    load_channel_state,
-    update_channel_state,
-    write_channel_registry,
-)
 from .config_loader import CollectorConfig, ConfigError, load_config, validate_config
 from .decoder import extract_candidate_lines
 from .dedup import deduplicate, profile_fingerprint
-from .fetcher import default_client, fetch_recent_telegram_posts, fetch_sources
+from .fetcher import default_client, fetch_sources
 from .input_reader import InputError, read_input_urls
-from .models import Freshness, Profile, RunStats, SourceResult, TelegramPost
+from .models import ProbeResult, Profile, RunStats
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
+from .probe import probe_batch
 from .report import build_report
 from .state import update_state
-from .telegram import (
-    canonical_preview_url,
-    extract_candidate_profile_uris,
-    extract_profile_uris,
-    extract_telegram_handles,
-)
 from .writer import write_json_atomic
 
 logger = logging.getLogger(__name__)
@@ -66,20 +53,6 @@ def _stage_duration_ms(stats: RunStats, stage: str, started_at: float) -> int:
 
 def _duration_text(duration_ms: int) -> str:
     return f"{duration_ms / 1000:.2f} с"
-
-
-def _load_telegram_registry(path: Path) -> set[str]:
-    """Read only canonical public handles from the prior public registry."""
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return set()
-    return {
-        handle
-        for line in lines
-        if (handle := line.strip().removeprefix("@").lower())
-        and extract_telegram_handles(f"@{handle}") == {handle}
-    }
 
 
 def _parse_and_filter_candidate(
@@ -150,19 +123,7 @@ async def run_collection(
     started_at = datetime.now(UTC)
     monotonic_started_at = perf_counter()
     stats = RunStats()
-    sources: list[SourceResult] = []
-    telegram_handles: set[str] = set()
-    telegram_posts: list[TelegramPost] = []
-    telegram_source_urls: dict[str, str] = {}
-    telegram_profile_uris: dict[str, list[str]] = {}
-    telegram_summary: dict[str, int] = {
-        "discovered_channels": 0,
-        "fresh_posts": 0,
-        "approved_channels": 0,
-        "candidate_channels": 0,
-        "watch_channels": 0,
-        "excluded_channels": 0,
-    }
+    sources = []
     paths = config.paths
     source_settings = config.sources
     filter_settings = config.static_filter
@@ -200,45 +161,9 @@ async def run_collection(
     active_client = client or default_client(source_settings)
     try:
         sources = await fetch_sources(urls, active_client, started_at, source_settings)
-        telegram_sources: list[SourceResult] = []
-        for source in sources:
-            if source.text is None:
-                continue
-            for line in extract_candidate_lines(source.text):
-                telegram_handles.update(extract_telegram_handles(line))
-        if telegram_handles:
-            telegram_posts = await fetch_recent_telegram_posts(
-                sorted(telegram_handles), active_client, started_at, config.telegram
-            )
-            posts_by_handle: dict[str, list[TelegramPost]] = defaultdict(list)
-            for post in telegram_posts:
-                posts_by_handle[post.handle].append(post)
-            for handle in sorted(telegram_handles):
-                profile_uris = extract_profile_uris(posts_by_handle[handle])
-                telegram_profile_uris[handle] = profile_uris
-                preview_url = canonical_preview_url(handle)
-                telegram_source_urls[preview_url] = handle
-                telegram_source = SourceResult(
-                    preview_url,
-                    Freshness.UNKNOWN,
-                    "\n".join(profile_uris),
-                )
-                telegram_sources.append(telegram_source)
-                sources.append(telegram_source)
     finally:
         if owns_client:
             await active_client.aclose()
-    telegram_summary["discovered_channels"] = len(telegram_handles)
-    telegram_summary["fresh_posts"] = len(telegram_posts)
-    telegram_summary["uri_candidates"] = sum(
-        len(profile_uris) for profile_uris in telegram_profile_uris.values()
-    )
-    logger.info(
-        "Telegram: обнаружено публичных каналов: %d; свежих сообщений: %d; URI-кандидатов: %d.",
-        telegram_summary["discovered_channels"],
-        telegram_summary["fresh_posts"],
-        telegram_summary["uri_candidates"],
-    )
     fetch_duration_ms = _stage_duration_ms(stats, "sources_fetch", fetch_started_at)
     usable_sources = sum(source.text is not None for source in sources)
     logger.info(
@@ -257,8 +182,7 @@ async def run_collection(
     accepted: list[Profile] = []
     loop = asyncio.get_running_loop()
     with ThreadPoolExecutor(max_workers=filter_settings.workers) as executor:
-        # Обрабатываем ТОЛЬКО профили из Telegram-каналов, а не из исходных подписок
-        for source in telegram_sources:
+        for source in sources:
             stats.source_freshness[source.freshness.value] = (
                 stats.source_freshness.get(source.freshness.value, 0) + 1
             )
@@ -266,7 +190,7 @@ async def run_collection(
                 stats.exclude(source.reason or source.freshness.value)
                 continue
             stats.fetched_sources += 1
-            lines = extract_candidate_lines(source.text or "")
+            lines = extract_candidate_lines(source.text)
             stats.candidate_lines += len(lines)
             for batch_start in range(0, len(lines), filter_settings.batch_size):
                 line_batch = lines[batch_start : batch_start + filter_settings.batch_size]
@@ -301,11 +225,6 @@ async def run_collection(
         stats.candidate_lines - stats.accepted_profiles,
     )
 
-    telegram_static_accepted: dict[str, int] = defaultdict(int)
-    for profile in accepted:
-        if (handle := telegram_source_urls.get(profile.source_url)) is not None:
-            telegram_static_accepted[handle] += 1
-
     deduplication_started_at = perf_counter()
     logger.info("Этап «Удаление повторов»: начат — профилей до обработки: %d.", len(accepted))
     unique = deduplicate(accepted)
@@ -337,23 +256,6 @@ async def run_collection(
         batch_size=validation_settings.batch_size,
         stats=stats,
     )
-    telegram_unique_profiles: dict[str, int] = defaultdict(int)
-    for profile in unique:
-        if (handle := telegram_source_urls.get(profile.source_url)) is not None:
-            telegram_unique_profiles[handle] += 1
-    telegram_xray_passed: dict[str, int] = defaultdict(int)
-    telegram_xray_failed: dict[str, int] = defaultdict(int)
-    for profile in unique:
-        if (handle := telegram_source_urls.get(profile.source_url)) is not None:
-            if profile in validated:
-                telegram_xray_passed[handle] += 1
-            else:
-                telegram_xray_failed[handle] += 1
-
-    telegram_summary["static_accepted_profiles"] = sum(telegram_static_accepted.values())
-    telegram_summary["unique_profiles"] = sum(telegram_unique_profiles.values())
-    telegram_summary["xray_passed_profiles"] = sum(telegram_xray_passed.values())
-    telegram_summary["xray_failed_profiles"] = sum(telegram_xray_failed.values())
     validation_duration_ms = _stage_duration_ms(stats, "xray_ip_validation", validation_started_at)
     logger.info(
         "Этап «Xray IP-проверка»: завершён за %s — прошли: %d, исключены: %d.",
@@ -371,62 +273,6 @@ async def run_collection(
             f"{reason}: {count}" for reason, count in sorted(validation_failures.items())
         )
         logger.info("Причины отказов Xray IP-проверки: %s.", summary)
-
-    previous_channel_state = load_channel_state(paths.telegram_state_path)
-    evaluations = {}
-    posts_by_handle = defaultdict(list)
-    for post in telegram_posts:
-        posts_by_handle[post.handle].append(post)
-    for handle in sorted(telegram_handles):
-        handle_posts = posts_by_handle[handle]
-        previous = previous_channel_state.get(channel_state_key(handle))
-        all_candidate_uris = extract_candidate_profile_uris(handle_posts)
-        per_post_profile_counts = [len(extract_profile_uris([post])) for post in handle_posts]
-        published_at_values = [
-            datetime.fromisoformat(post.published_at.replace("Z", "+00:00"))
-            for post in handle_posts
-        ]
-        span_hours = 0.0
-        if len(published_at_values) >= 2:
-            span_hours = (
-                max(published_at_values) - min(published_at_values)
-            ).total_seconds() / 3600
-        evaluation = evaluate_channel(
-            handle,
-            ChannelMetrics(
-                preview_available=bool(handle_posts),
-                fresh_posts=len(handle_posts),
-                all_uri_candidates=len(all_candidate_uris),
-                supported_candidates=len(telegram_profile_uris.get(handle, [])),
-                static_accepted=telegram_static_accepted[handle],
-                unique_profiles=telegram_unique_profiles[handle],
-                duplicate_posts=max(
-                    0,
-                    sum(per_post_profile_counts) - len(telegram_profile_uris.get(handle, [])),
-                ),
-                xray_passed=telegram_xray_passed[handle],
-                xray_failed=telegram_xray_failed[handle],
-                posts_with_profiles=sum(1 for count in per_post_profile_counts if count > 0),
-                total_text_length=sum(len(post.text) for post in handle_posts),
-                span_hours=span_hours,
-            ),
-            previous,
-            config.telegram.quality,
-            started_at,
-        )
-        evaluations[handle] = evaluation
-        telegram_summary[f"{evaluation.status}_channels"] += 1
-    if evaluations:
-        update_channel_state(paths.telegram_state_path, evaluations, started_at)
-    write_channel_registry(paths.telegram_registry_path, telegram_handles)
-    write_channel_registry(
-        paths.tg_channels_path,
-        {
-            handle
-            for handle, evaluation in evaluations.items()
-            if evaluation.status == "approved" and evaluation.xray_successes > 0
-        },
-    )
 
     publication_started_at = perf_counter()
     logger.info("Этап «Публикация»: начат.")
@@ -468,7 +314,6 @@ async def run_collection(
                 stats=stats,
                 max_age_hours=source_settings.max_age_hours,
                 strict_first_seen=behavior.strict_first_seen,
-                telegram=telegram_summary,
             ),
         )
     except OSError:

@@ -131,10 +131,10 @@ def test_atomic_writer_replaces_previous_contents(tmp_path: Path) -> None:
     assert output_path.read_text(encoding="utf-8") == "new\n"
 
 
-def test_collection_does_not_publish_direct_profile_when_xray_validation_succeeds(
+def test_collection_publishes_profile_when_xray_validation_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_for
 ) -> None:
-    """Catches publication of a direct subscription profile without a Telegram origin."""
+    """Catches a validation stage that drops a profile despite a positive Xray IP result."""
 
     async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
         return [ProbeResult(True, 1, 8) for _ in profiles]
@@ -155,7 +155,7 @@ def test_collection_does_not_publish_direct_profile_when_xray_validation_succeed
             )
 
     assert asyncio.run(exercise()) == 0
-    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8") == ""
+    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
 
 
 def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path, config_for) -> None:
