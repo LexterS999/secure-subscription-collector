@@ -1,51 +1,51 @@
 {
   "counts": {
-    "accepted_profiles": 26417,
-    "candidate_lines": 64063,
-    "emitted_profiles": 3043,
+    "accepted_profiles": 26362,
+    "candidate_lines": 64740,
+    "emitted_profiles": 3022,
     "excluded": {
-      "config_invalid": 2812,
+      "config_invalid": 2854,
       "http_error:HTTPStatusError": 2,
-      "insecure_flag": 4847,
-      "invalid_or_unsupported": 2,
+      "insecure_flag": 4609,
+      "invalid_or_unsupported": 3,
       "invalid_reality_key": 46,
-      "missing_fingerprint": 7888,
-      "missing_required_secret": 16185,
-      "missing_security": 6671,
-      "missing_sni": 1976,
-      "no_endpoint_confirmation": 6655,
-      "probe_error": 30,
+      "missing_fingerprint": 8162,
+      "missing_required_secret": 16811,
+      "missing_security": 6718,
+      "missing_sni": 2000,
+      "no_endpoint_confirmation": 6700,
+      "probe_error": 6,
       "response_too_large": 2,
-      "unsupported_transport": 31
+      "unsupported_transport": 29
     },
     "fetched_sources": 19,
     "input_sources": 23,
-    "parsed_profiles": 64061,
-    "probed_profiles": 12540,
+    "parsed_profiles": 64737,
+    "probed_profiles": 12582,
     "source_freshness": {
       "failed": 4,
       "recent": 1,
       "unknown": 18
     },
-    "unique_profiles": 12540,
-    "validated_profiles": 3043
+    "unique_profiles": 12582,
+    "validated_profiles": 3022
   },
-  "generated_at": "2026-08-20T02:11:17Z",
+  "generated_at": "2026-08-20T04:28:44Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 12,
-        "total": 12
+        "new": 0,
+        "total": 0
       },
       "trojan": {
-        "new": 1034,
-        "total": 1034
+        "new": 1172,
+        "total": 1172
       },
       "vless": {
-        "new": 1997,
-        "total": 1997
+        "new": 1850,
+        "total": 1850
       }
     }
   },
@@ -168,11 +168,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 335,
-    "publication": 229,
-    "sources_fetch": 1589,
-    "static_filter": 6970,
-    "total": 714850,
-    "xray_ip_validation": 705726
+    "deduplication": 341,
+    "publication": 225,
+    "sources_fetch": 1134,
+    "static_filter": 7279,
+    "total": 719176,
+    "xray_ip_validation": 710196
   }
 }
