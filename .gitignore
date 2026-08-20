@@ -1,66 +1,40 @@
-# Compiled and build artifacts
+```
+# Compiled Python files
 *.pyc
 __pycache__/
-*.o
-*.obj
-*.out
-*.class
-*.dll
-*.so
-*.a
-*.exe
 
-# Dependencies
-.venv/
+# Virtual environments
 venv/
+.venv/
 .env
 .env.local
 *.env.*
 
-# Logs and temp files
+# Logs
 *.log
+
+# Temporary files
 *.tmp
 *.swp
-*.swo
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
-# Python specific
-*.pyc
-__pycache__/
-*.pyo
-*.pyd
-.Python
-*.so
-.Python
-*.egg-info/
-.eggs/
-
-# Testing
-.pytest_cache/
-.mypy_cache/
-.hypothesis/
-
-# Distribution / packaging
+# Build artifacts
 dist/
 build/
-*.egg
-*.egg-info/
-.svn/
-.wafpickle-*
-coverage.xml
-*.gcda
+target/
+
+# Dependencies
+node_modules/
+.mypy_cache/
+.pytest_cache/
+coverage/
+htmlcov/
+.coverage
 
 # System files
 .DS_Store
 Thumbs.db
-*~
+```
