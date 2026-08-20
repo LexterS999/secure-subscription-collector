@@ -1,58 +1,58 @@
 {
   "counts": {
-    "accepted_profiles": 26362,
-    "candidate_lines": 64740,
-    "emitted_profiles": 3022,
+    "accepted_profiles": 26617,
+    "candidate_lines": 65816,
+    "emitted_profiles": 2265,
     "excluded": {
-      "config_invalid": 2854,
+      "config_invalid": 3584,
       "http_error:HTTPStatusError": 2,
-      "insecure_flag": 4609,
-      "invalid_or_unsupported": 3,
-      "invalid_reality_key": 46,
-      "missing_fingerprint": 8162,
-      "missing_required_secret": 16811,
-      "missing_security": 6718,
-      "missing_sni": 2000,
-      "no_endpoint_confirmation": 6700,
-      "probe_error": 6,
+      "insecure_flag": 4688,
+      "invalid_or_unsupported": 4,
+      "invalid_reality_key": 58,
+      "missing_fingerprint": 8389,
+      "missing_required_secret": 16882,
+      "missing_security": 7081,
+      "missing_sni": 2065,
+      "no_endpoint_confirmation": 6961,
+      "probe_error": 20,
       "response_too_large": 2,
-      "unsupported_transport": 29
+      "unsupported_transport": 32
     },
     "fetched_sources": 19,
     "input_sources": 23,
-    "parsed_profiles": 64737,
-    "probed_profiles": 12582,
+    "parsed_profiles": 65812,
+    "probed_profiles": 12830,
     "source_freshness": {
       "failed": 4,
       "recent": 1,
       "unknown": 18
     },
-    "unique_profiles": 12582,
-    "validated_profiles": 3022
+    "unique_profiles": 12830,
+    "validated_profiles": 2265
   },
-  "generated_at": "2026-08-20T04:28:44Z",
+  "generated_at": "2026-08-20T08:27:50Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 0,
-        "total": 0
+        "new": 8,
+        "total": 8
       },
       "trojan": {
-        "new": 1172,
-        "total": 1172
+        "new": 1032,
+        "total": 1032
       },
       "vless": {
-        "new": 1850,
-        "total": 1850
+        "new": 1225,
+        "total": 1225
       }
     }
   },
   "sources": [
     {
       "freshness": "recent",
-      "last_modified": "2026-08-20T02:11:18+00:00",
+      "last_modified": "2026-08-20T06:28:38+00:00",
       "reason": null
     },
     {
@@ -168,11 +168,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 341,
-    "publication": 225,
-    "sources_fetch": 1134,
-    "static_filter": 7279,
-    "total": 719176,
-    "xray_ip_validation": 710196
+    "deduplication": 330,
+    "publication": 212,
+    "sources_fetch": 1674,
+    "static_filter": 7236,
+    "total": 719406,
+    "xray_ip_validation": 709953
   }
 }
