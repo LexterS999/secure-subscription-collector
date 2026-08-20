@@ -35,8 +35,6 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         "last_evaluated_at",
         "confidence",
         "required_score",
-        "xray_successes",
-        "xray_failures",
     }
     if set(value) != required or value["status"] not in _VALID_STATUSES:
         return None
@@ -59,9 +57,6 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
             or not minimum <= float(value[field]) <= maximum
         ):
             return None
-    for field in ("xray_successes", "xray_failures"):
-        if isinstance(value[field], bool) or not isinstance(value[field], int) or value[field] < 0:
-            return None
     string_fields = ("reason", "first_seen_at", "last_seen_at", "last_evaluated_at")
     if any(not isinstance(value[field], str) or not value[field] for field in string_fields):
         return None
@@ -75,8 +70,6 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         last_evaluated_at=value["last_evaluated_at"],
         confidence=round(float(value["confidence"]), 4),
         required_score=round(float(value["required_score"]), 2),
-        xray_successes=value["xray_successes"],
-        xray_failures=value["xray_failures"],
     )
 
 
