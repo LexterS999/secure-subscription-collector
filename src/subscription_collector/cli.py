@@ -25,11 +25,10 @@ from .decoder import extract_candidate_lines
 from .dedup import deduplicate, profile_fingerprint
 from .fetcher import default_client, fetch_recent_telegram_posts, fetch_sources
 from .input_reader import InputError, read_input_urls
-from .models import Freshness, ProbeResult, Profile, RunStats, SourceResult, TelegramPost
+from .models import Freshness, Profile, RunStats, SourceResult, TelegramPost
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
-from .probe import probe_batch
 from .report import build_report
 from .state import update_state
 from .telegram import (
