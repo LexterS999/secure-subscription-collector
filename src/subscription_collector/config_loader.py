@@ -40,7 +40,6 @@ class PathsConfig:
     output_dir: Path
     report_path: Path
     state_path: Path
-    xray_path: Path
     telegram_state_path: Path
     telegram_registry_path: Path
     tg_channels_path: Path
@@ -63,31 +62,9 @@ class StaticFilterConfig:
 
 
 @dataclass(frozen=True)
-class IpValidationConfig:
-    ip_echo_urls: tuple[str, ...]
-    http_check_urls: tuple[str, ...]
-    accepted_http_statuses: tuple[int, ...]
-    timeout_seconds: float
-    config_test_timeout_seconds: float
-    startup_timeout_seconds: float
-    request_concurrency: int
-    batch_size: int
-    batch_concurrency: int
-    listener_poll_interval_seconds: float
-    process_shutdown_timeout_seconds: float
-    connection_max_connections: int
-    connection_max_keepalive_connections: int
-
-
-@dataclass(frozen=True)
 class BehaviorConfig:
     strict_first_seen: bool
     fail_on_empty: bool
-
-
-@dataclass(frozen=True)
-class XrayConfig:
-    version: str
 
 
 @dataclass(frozen=True)
@@ -99,8 +76,6 @@ class ChannelQualityConfig:
     new_channel_margin: float = 20.0
     minimum_confidence: float = 0.5
     history_half_life_hours: float = 72.0
-    xray_prior_successes: float = 1.0
-    xray_prior_failures: float = 1.0
     activity_weight: float = 20.0
     supported_yield_weight: float = 20.0
     static_security_weight: float = 25.0
@@ -109,7 +84,6 @@ class ChannelQualityConfig:
     profile_coverage_weight: float = 10.0
     text_depth_weight: float = 5.0
     cadence_weight: float = 5.0
-    xray_weight: float = 10.0
     history_weight: float = 15.0
     near_threshold_margin: float = 8.0
 
@@ -131,9 +105,7 @@ class CollectorConfig:
     paths: PathsConfig
     sources: SourcesConfig
     static_filter: StaticFilterConfig
-    ip_validation: IpValidationConfig
     behavior: BehaviorConfig
-    xray: XrayConfig
     telegram: TelegramConfig
 
 
@@ -222,14 +194,12 @@ def _http_statuses(section: dict[str, Any], key: str, location: str) -> tuple[in
 def _paths_config(payload: dict[str, Any]) -> PathsConfig:
     section = _mapping(payload["paths"], "paths")
     _check_keys(
-        section,
         "paths",
         {
             "input",
             "output_dir",
             "report",
             "state",
-            "xray_path",
             "telegram_state",
             "telegram_registry",
             "tg_channels",
@@ -240,7 +210,6 @@ def _paths_config(payload: dict[str, Any]) -> PathsConfig:
         output_dir=Path(_string(section, "output_dir", "paths")),
         report_path=Path(_string(section, "report", "paths")),
         state_path=Path(_string(section, "state", "paths")),
-        xray_path=Path(_string(section, "xray_path", "paths")),
         telegram_state_path=Path(_string(section, "telegram_state", "paths")),
         telegram_registry_path=Path(_string(section, "telegram_registry", "paths")),
         tg_channels_path=Path(_string(section, "tg_channels", "paths")),
@@ -280,56 +249,6 @@ def _static_filter_config(payload: dict[str, Any]) -> StaticFilterConfig:
     )
 
 
-def _ip_validation_config(payload: dict[str, Any]) -> IpValidationConfig:
-    section = _mapping(payload["ip_validation"], "ip_validation")
-    _check_keys(
-        section,
-        "ip_validation",
-        {
-            "ip_echo_urls",
-            "http_check_urls",
-            "accepted_http_statuses",
-            "timeout_seconds",
-            "config_test_timeout_seconds",
-            "startup_timeout_seconds",
-            "request_concurrency",
-            "batch_size",
-            "batch_concurrency",
-            "listener_poll_interval_seconds",
-            "process_shutdown_timeout_seconds",
-            "connection_max_connections",
-            "connection_max_keepalive_connections",
-        },
-    )
-    return IpValidationConfig(
-        ip_echo_urls=_https_urls(section, "ip_echo_urls", "ip_validation"),
-        http_check_urls=_https_urls(section, "http_check_urls", "ip_validation"),
-        accepted_http_statuses=_http_statuses(section, "accepted_http_statuses", "ip_validation"),
-        timeout_seconds=_number(section, "timeout_seconds", "ip_validation", 0.000001),
-        config_test_timeout_seconds=_number(
-            section, "config_test_timeout_seconds", "ip_validation", 0.000001
-        ),
-        startup_timeout_seconds=_number(
-            section, "startup_timeout_seconds", "ip_validation", 0.000001
-        ),
-        request_concurrency=_integer(section, "request_concurrency", "ip_validation", 1),
-        batch_size=_integer(section, "batch_size", "ip_validation", 1),
-        batch_concurrency=_integer(section, "batch_concurrency", "ip_validation", 1),
-        listener_poll_interval_seconds=_number(
-            section, "listener_poll_interval_seconds", "ip_validation", 0.000001
-        ),
-        process_shutdown_timeout_seconds=_number(
-            section, "process_shutdown_timeout_seconds", "ip_validation", 0.000001
-        ),
-        connection_max_connections=_integer(
-            section, "connection_max_connections", "ip_validation", 1
-        ),
-        connection_max_keepalive_connections=_integer(
-            section, "connection_max_keepalive_connections", "ip_validation", 0
-        ),
-    )
-
-
 def _behavior_config(payload: dict[str, Any]) -> BehaviorConfig:
     section = _mapping(payload["behavior"], "behavior")
     _check_keys(section, "behavior", {"strict_first_seen", "fail_on_empty"})
@@ -337,12 +256,6 @@ def _behavior_config(payload: dict[str, Any]) -> BehaviorConfig:
         strict_first_seen=_boolean(section, "strict_first_seen", "behavior"),
         fail_on_empty=_boolean(section, "fail_on_empty", "behavior"),
     )
-
-
-def _xray_config(payload: dict[str, Any]) -> XrayConfig:
-    section = _mapping(payload["xray"], "xray")
-    _check_keys(section, "xray", {"version"})
-    return XrayConfig(version=_string(section, "version", "xray"))
 
 
 def _quality_config(value: Any) -> ChannelQualityConfig:
@@ -358,8 +271,6 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
             "new_channel_margin",
             "minimum_confidence",
             "history_half_life_hours",
-            "xray_prior_successes",
-            "xray_prior_failures",
             "activity_weight",
             "supported_yield_weight",
             "static_security_weight",
@@ -368,7 +279,6 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
             "profile_coverage_weight",
             "text_depth_weight",
             "cadence_weight",
-            "xray_weight",
             "history_weight",
             "near_threshold_margin",
         },
@@ -392,8 +302,6 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
         history_half_life_hours=_number(
             section, "history_half_life_hours", "telegram.quality", 0.000001
         ),
-        xray_prior_successes=_number(section, "xray_prior_successes", "telegram.quality", 0.0),
-        xray_prior_failures=_number(section, "xray_prior_failures", "telegram.quality", 0.0),
         activity_weight=_number(section, "activity_weight", "telegram.quality", 0.0),
         supported_yield_weight=_number(section, "supported_yield_weight", "telegram.quality", 0.0),
         static_security_weight=_number(section, "static_security_weight", "telegram.quality", 0.0),
@@ -404,7 +312,6 @@ def _quality_config(value: Any) -> ChannelQualityConfig:
         ),
         text_depth_weight=_number(section, "text_depth_weight", "telegram.quality", 0.0),
         cadence_weight=_number(section, "cadence_weight", "telegram.quality", 0.0),
-        xray_weight=_number(section, "xray_weight", "telegram.quality", 0.0),
         history_weight=_number(section, "history_weight", "telegram.quality", 0.0),
         near_threshold_margin=bounded("near_threshold_margin", 0.0, 100.0),
     )
@@ -452,7 +359,6 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "output_dir": str(config.paths.output_dir),
             "report": str(config.paths.report_path),
             "state": str(config.paths.state_path),
-            "xray_path": str(config.paths.xray_path),
             "telegram_state": str(config.paths.telegram_state_path),
             "telegram_registry": str(config.paths.telegram_registry_path),
             "tg_channels": str(config.paths.tg_channels_path),
@@ -469,30 +375,10 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "workers": config.static_filter.workers,
             "batch_size": config.static_filter.batch_size,
         },
-        "ip_validation": {
-            "ip_echo_urls": list(config.ip_validation.ip_echo_urls),
-            "http_check_urls": list(config.ip_validation.http_check_urls),
-            "accepted_http_statuses": list(config.ip_validation.accepted_http_statuses),
-            "timeout_seconds": config.ip_validation.timeout_seconds,
-            "config_test_timeout_seconds": config.ip_validation.config_test_timeout_seconds,
-            "startup_timeout_seconds": config.ip_validation.startup_timeout_seconds,
-            "request_concurrency": config.ip_validation.request_concurrency,
-            "batch_size": config.ip_validation.batch_size,
-            "batch_concurrency": config.ip_validation.batch_concurrency,
-            "listener_poll_interval_seconds": config.ip_validation.listener_poll_interval_seconds,
-            "process_shutdown_timeout_seconds": (
-                config.ip_validation.process_shutdown_timeout_seconds
-            ),
-            "connection_max_connections": config.ip_validation.connection_max_connections,
-            "connection_max_keepalive_connections": (
-                config.ip_validation.connection_max_keepalive_connections
-            ),
-        },
         "behavior": {
             "strict_first_seen": config.behavior.strict_first_seen,
             "fail_on_empty": config.behavior.fail_on_empty,
         },
-        "xray": {"version": config.xray.version},
         "telegram": {
             "max_post_age_hours": config.telegram.max_post_age_hours,
             "max_profiles_per_channel": config.telegram.max_profiles_per_channel,
@@ -509,8 +395,6 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
                 "new_channel_margin": config.telegram.quality.new_channel_margin,
                 "minimum_confidence": config.telegram.quality.minimum_confidence,
                 "history_half_life_hours": config.telegram.quality.history_half_life_hours,
-                "xray_prior_successes": config.telegram.quality.xray_prior_successes,
-                "xray_prior_failures": config.telegram.quality.xray_prior_failures,
                 "activity_weight": config.telegram.quality.activity_weight,
                 "supported_yield_weight": config.telegram.quality.supported_yield_weight,
                 "static_security_weight": config.telegram.quality.static_security_weight,
@@ -519,7 +403,6 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
                 "profile_coverage_weight": config.telegram.quality.profile_coverage_weight,
                 "text_depth_weight": config.telegram.quality.text_depth_weight,
                 "cadence_weight": config.telegram.quality.cadence_weight,
-                "xray_weight": config.telegram.quality.xray_weight,
                 "history_weight": config.telegram.quality.history_weight,
                 "near_threshold_margin": config.telegram.quality.near_threshold_margin,
             },
@@ -528,9 +411,7 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
     _paths_config(payload)
     _sources_config(payload)
     _static_filter_config(payload)
-    _ip_validation_config(payload)
     _behavior_config(payload)
-    _xray_config(payload)
     _telegram_config(payload)
     return config
 
@@ -547,16 +428,14 @@ def load_config(path: Path) -> CollectorConfig:
     _check_keys(
         root,
         "Корень config.yaml",
-        {"paths", "sources", "static_filter", "ip_validation", "behavior", "xray", "telegram"},
+        {"paths", "sources", "static_filter", "behavior", "telegram"},
     )
     return validate_config(
         CollectorConfig(
             paths=_paths_config(root),
             sources=_sources_config(root),
             static_filter=_static_filter_config(root),
-            ip_validation=_ip_validation_config(root),
             behavior=_behavior_config(root),
-            xray=_xray_config(root),
             telegram=_telegram_config(root),
         )
     )
