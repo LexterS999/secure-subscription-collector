@@ -1,0 +1,2 @@
+[console_scripts]
+secure-subscription-collector = subscription_collector.cli:main

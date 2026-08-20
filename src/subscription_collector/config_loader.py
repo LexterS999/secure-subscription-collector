@@ -62,23 +62,6 @@ class StaticFilterConfig:
 
 
 @dataclass(frozen=True)
-class IpValidationConfig:
-    ip_echo_urls: tuple[str, ...]
-    http_check_urls: tuple[str, ...]
-    accepted_http_statuses: tuple[int, ...]
-    timeout_seconds: float
-    config_test_timeout_seconds: float
-    startup_timeout_seconds: float
-    request_concurrency: int
-    batch_size: int
-    batch_concurrency: int
-    listener_poll_interval_seconds: float
-    process_shutdown_timeout_seconds: float
-    connection_max_connections: int
-    connection_max_keepalive_connections: int
-
-
-@dataclass(frozen=True)
 class BehaviorConfig:
     strict_first_seen: bool
     fail_on_empty: bool
@@ -122,7 +105,6 @@ class CollectorConfig:
     paths: PathsConfig
     sources: SourcesConfig
     static_filter: StaticFilterConfig
-    ip_validation: IpValidationConfig
     behavior: BehaviorConfig
     telegram: TelegramConfig
 
