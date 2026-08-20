@@ -232,6 +232,7 @@ def _paths_config(payload: dict[str, Any]) -> PathsConfig:
             "telegram_state",
             "telegram_registry",
             "tg_channels",
+            "xray_path",
         },
     )
     return PathsConfig(
@@ -242,6 +243,7 @@ def _paths_config(payload: dict[str, Any]) -> PathsConfig:
         telegram_state_path=Path(_string(section, "telegram_state", "paths")),
         telegram_registry_path=Path(_string(section, "telegram_registry", "paths")),
         tg_channels_path=Path(_string(section, "tg_channels", "paths")),
+        xray_path=Path(_string(section, "xray_path", "paths")),
     )
 
 
@@ -391,6 +393,7 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "telegram_state": str(config.paths.telegram_state_path),
             "telegram_registry": str(config.paths.telegram_registry_path),
             "tg_channels": str(config.paths.tg_channels_path),
+            "xray_path": str(config.paths.xray_path),
         },
         "sources": {
             "max_age_hours": config.sources.max_age_hours,
@@ -457,7 +460,7 @@ def load_config(path: Path) -> CollectorConfig:
     _check_keys(
         root,
         "Корень config.yaml",
-        {"paths", "sources", "static_filter", "behavior", "telegram"},
+        {"paths", "sources", "static_filter", "behavior", "telegram", "xray"},
     )
     return validate_config(
         CollectorConfig(
@@ -466,5 +469,6 @@ def load_config(path: Path) -> CollectorConfig:
             static_filter=_static_filter_config(root),
             behavior=_behavior_config(root),
             telegram=_telegram_config(root),
+            xray=_xray_config(root),
         )
     )

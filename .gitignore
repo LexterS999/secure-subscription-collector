@@ -1,1 +1,41 @@
-(src/subscription_collector/config_loader.py)
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.env
+.env.local
+.env.*
+.venv/
+venv/
+ENV/
+.env.dSYM/
+
+# Generated files
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+.coverage.*
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+```
