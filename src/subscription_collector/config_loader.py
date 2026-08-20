@@ -194,6 +194,7 @@ def _http_statuses(section: dict[str, Any], key: str, location: str) -> tuple[in
 def _paths_config(payload: dict[str, Any]) -> PathsConfig:
     section = _mapping(payload["paths"], "paths")
     _check_keys(
+        section,
         "paths",
         {
             "input",
