@@ -7,9 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from subscription_collector import cli
 from subscription_collector.cli import run_collection
-from subscription_collector.models import ProbeResult
 
 SAFE_VLESS = (
     "vless://123e4567-e89b-12d3-a456-426614174000@edge.example.org:443"
@@ -35,21 +33,12 @@ def _preview_html() -> str:
     """
 
 
-def test_public_preview_profiles_share_xray_validation_and_approve_quality_channel(
+def test_public_preview_profiles_pass_full_analysis_and_approve_quality_channel(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     config_for,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Catch a Telegram path that bypasses filtering or never writes its quality outcome."""
-
-    probed_source_urls: list[str] = []
-
-    async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
-        probed_source_urls.extend(profile.source_url for profile in profiles)
-        return [ProbeResult(True, 1, 8) for _ in profiles]
-
-    monkeypatch.setattr(cli, "probe_batch", validated)
     input_path = tmp_path / "input.txt"
     input_path.write_text("https://seed.example/sub\n", encoding="utf-8")
     config = config_for(input_path=input_path)
@@ -84,19 +73,18 @@ def test_public_preview_profiles_share_xray_validation_and_approve_quality_chann
     assert "223e4567-e89b-12d3-a456-426614174000" in published
     assert config.paths.tg_channels_path.read_text(encoding="utf-8") == "@quality_channel\n"
     assert "quality_channel" not in config.paths.telegram_state_path.read_text(encoding="utf-8")
-    assert report["telegram"]["discovered_channels"] == 1
-    assert report["telegram"]["approved_channels"] == 1
-    assert report["telegram"]["uri_candidates"] == 2
-    assert report["telegram"]["static_accepted_profiles"] == 2
-    assert report["telegram"]["unique_profiles"] == 2
-    assert report["telegram"]["xray_passed_profiles"] == 2
+    telegram_report = report["telegram"]
+    assert telegram_report["discovered_channels"] == 1
+    assert telegram_report["approved_channels"] == 1
+    assert telegram_report["uri_candidates"] == 2
+    assert telegram_report["static_accepted_profiles"] == 2
+    assert telegram_report["unique_profiles"] == 2
+    assert telegram_report["deep_accepted_profiles"] == 2
     assert (
-        "Telegram: обнаружено публичных каналов: 1; свежих сообщений: 2; URI-кандидатов: 2."
-        in "\n".join(record.getMessage() for record in caplog.records)
+        "Telegram: обнаружено публичных каналов: 1; свежих сообщений за 72 ч: 2; "
+        "URI-кандидатов: 2." in "\n".join(record.getMessage() for record in caplog.records)
     )
     assert "https://t.me/s/quality_channel" in requests
-    assert len(probed_source_urls) == 4
-    assert set(probed_source_urls) == {"https://t.me/s/quality_channel"}
 
 
 SAFE_TROJAN = (
@@ -110,13 +98,8 @@ SAFE_HYSTERIA2 = (
 
 def test_public_preview_publishes_all_supported_protocols_only_from_telegram(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     config_for,
 ) -> None:
-    async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
-        return [ProbeResult(True, 1, 8) for _ in profiles]
-
-    monkeypatch.setattr(cli, "probe_batch", validated)
     input_path = tmp_path / "input.txt"
     input_path.write_text("https://seed.example/all-protocols\n", encoding="utf-8")
     config = config_for(input_path=input_path)
@@ -191,5 +174,5 @@ def test_collection_does_not_fetch_registry_only_channel_without_current_subscri
 
     assert asyncio.run(exercise()) == 0
     assert requested_hosts == ["seed.example"]
-    assert (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8") == ""
+    assert (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
     assert registry_path.read_text(encoding="utf-8") == ""

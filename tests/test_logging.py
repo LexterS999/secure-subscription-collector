@@ -6,9 +6,7 @@ import logging
 
 import httpx
 
-from subscription_collector import cli
 from subscription_collector.cli import run_collection
-from subscription_collector.models import ProbeResult
 
 TROJAN_TLS = (
     "trojan://correct-horse@node.example.org:443"
@@ -17,19 +15,13 @@ TROJAN_TLS = (
 
 
 def test_collection_logs_russian_progress_and_redacts_profile_data(
-    tmp_path, caplog, monkeypatch, config_for
+    tmp_path, caplog, config_for
 ) -> None:
-    """Reports safe aggregate progress and redacts data while Xray validation is active."""
-
-    async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
-        return [ProbeResult(True, 1, 8) for _ in profiles]
-
-    monkeypatch.setattr(cli, "probe_batch", validated)
+    """Reports safe aggregate progress and redacts data during profile processing."""
 
     async def exercise() -> tuple[int, dict[str, object]]:
         input_path = tmp_path / "input.txt"
         report_path = tmp_path / "report.json"
-        state_path = tmp_path / "state.json"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
         second = TROJAN_TLS.replace("node.example.org", "second.example.org")
 
@@ -38,12 +30,7 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             code = await run_collection(
-                config=config_for(
-                    input_path=input_path,
-                    report_path=report_path,
-                    state_path=state_path,
-                    xray_path=tmp_path / "xray",
-                ),
+                config=config_for(input_path=input_path, report_path=report_path),
                 client=client,
             )
         return code, json.loads(report_path.read_text(encoding="utf-8"))
@@ -56,21 +43,16 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
     assert "Этап «Загрузка источников»: начат" in messages
     assert "Этап «Статическая фильтрация»: завершён" in messages
     assert "Этап «Удаление повторов»: завершён" in messages
-    assert "Этап «Xray IP-проверка»: завершён" in messages
     assert "Этап «Публикация»: завершён" in messages
-    assert "URL-проверка" not in messages
     assert "профиль №" not in messages
     assert "correct-horse" not in messages
     assert "node.example.org" not in messages
     assert "second.example.org" not in messages
     assert report["publication"]["protocols"]["trojan"] == {"new": 2, "total": 2}
-    assert report["counts"]["probed_profiles"] == 2
-    assert report["counts"]["validated_profiles"] == 2
     assert set(report["timing_ms"]) >= {
         "sources_fetch",
         "static_filter",
         "deduplication",
-        "xray_ip_validation",
         "publication",
         "total",
     }
@@ -85,9 +67,7 @@ def test_collection_logs_input_error_in_russian_without_echoing_invalid_url(
     async def exercise() -> int:
         input_path = tmp_path / "input.txt"
         input_path.write_text("http://private.example/secret-token\n", encoding="utf-8")
-        return await run_collection(
-            config=config_for(input_path=input_path, xray_path=tmp_path / "xray")
-        )
+        return await run_collection(config=config_for(input_path=input_path))
 
     caplog.set_level(logging.INFO, logger="subscription_collector.cli")
     code = asyncio.run(exercise())
@@ -119,33 +99,30 @@ def test_configured_logging_keeps_pipeline_actions_and_suppresses_http_requests(
     assert "receive_response_headers.complete" not in messages
 
 
-def test_collection_logs_aggregate_xray_failure_categories(
-    tmp_path, caplog, monkeypatch, config_for
-) -> None:
-    """Catches an opaque zero-result validation run without safe failure diagnostics."""
-
-    async def rejected(profiles, *_args, **_kwargs) -> list[ProbeResult]:
-        return [ProbeResult(False, 0, None, "ip_timeout") for _ in profiles]
-
-    monkeypatch.setattr(cli, "probe_batch", rejected)
+def test_collection_logs_aggregate_exclusion_categories(tmp_path, caplog, config_for) -> None:
+    """Catches an opaque run without safe redacted diagnostics for excluded profiles."""
 
     async def exercise() -> int:
         input_path = tmp_path / "input.txt"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text=f"{TROJAN_TLS}\n")
+            return httpx.Response(
+                200,
+                text=(
+                    "trojan://correct-horse@node.example.org:443"
+                    "?security=tls&sni=www.example.com&fp=unknownbrowser&type=tcp#bad-fp\n"
+                    f"{TROJAN_TLS}\n"
+                ),
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await run_collection(
-                config=config_for(input_path=input_path, xray_path=tmp_path / "xray"),
-                client=client,
-            )
+            return await run_collection(config=config_for(input_path=input_path), client=client)
 
     caplog.set_level(logging.INFO, logger="subscription_collector.cli")
     assert asyncio.run(exercise()) == 0
     messages = "\n".join(record.getMessage() for record in caplog.records)
 
-    assert "Причины отказов Xray IP-проверки: ip_timeout: 1" in messages
+    assert "Причины исключения профилей: unknown_fingerprint: 1" in messages
     assert "correct-horse" not in messages
     assert "node.example.org" not in messages

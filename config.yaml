@@ -3,14 +3,18 @@
 paths:
   # Файл со списком HTTPS-адресов источников подписок, по одному адресу в строке.
   input: input.txt
-  # Каталог, в который добавляются итоговые файлы vless.txt, trojan.txt и hysteria2.txt.
+  # Каталог с итоговыми файлами vless.txt, trojan.txt, hysteria2.txt и tg_channels.txt.
   output_dir: output
   # Путь к обезличенному JSON-отчёту о последнем запуске.
   report: report.json
   # Путь к состоянию отпечатков профилей для учёта первого появления.
   state: .collector/state.json
-  # Путь к исполняемому файлу Xray, используемому только во время IP-проверки.
-  xray_path: .xray/xray
+  # Путь к списку качественных (одобренных) Telegram-каналов текущего запуска.
+  tg_channels: output/tg_channels.txt
+  # Путь к обезличенному состоянию качества каналов.
+  telegram_state: .collector/channel_state.json
+  # Внутренний реестр каналов, обнаруженных в текущем запуске.
+  telegram_registry: .collector/tg_registry.txt
 
 sources:
   # Максимальный допустимый возраст источника в часах по HTTP-заголовку Last-Modified.
@@ -27,46 +31,10 @@ sources:
   user_agent: secure-subscription-collector/0.1
 
 static_filter:
-  # Число потоков для разбора URI и статической проверки безопасности профилей.
+  # Число потоков для разбора URI, строгой проверки безопасности и глубокого анализа профилей.
   workers: 160
   # Число строк URI, передаваемых на разбор одной группой.
   batch_size: 1024
-
-ip_validation:
-  # Независимые HTTPS-сервисы, возвращающие публичный IP-адрес через проверяемый Xray-туннель.
-  # Они проверяются по очереди: успешный глобальный IP сразу подтверждает профиль.
-  ip_echo_urls:
-    - https://api.ipify.org?format=text
-    - https://icanhazip.com/
-  # HTTPS-адреса для резервной проверки доступности через тот же Xray-туннель.
-  # Используются только если ни один сервис IP-echo не подтвердил профиль.
-  http_check_urls:
-    - https://www.google.com/generate_204
-    - https://www.cloudflare.com/cdn-cgi/trace
-  # HTTP-коды, которые считаются успешным резервным подтверждением доступности туннеля.
-  accepted_http_statuses: [200, 204, 301, 302, 307]
-  # Максимальное время одного запроса через профиль в секундах, включая SOCKS, TLS и первый ответ.
-  timeout_seconds: 4.0
-  # Максимальное время синтаксической проверки временного JSON-конфига командой Xray run -test.
-  # Не уменьшайте до времени запуска listener: большой batch проверяется заметно дольше.
-  config_test_timeout_seconds: 10.0
-  # Максимальное время запуска Xray и ожидания локальных SOCKS-портов в секундах.
-  startup_timeout_seconds: 5.0
-  # Максимальное число одновременных проверочных запросов внутри одного процесса Xray.
-  request_concurrency: 64
-  # Максимальное число профилей в одной временной конфигурации и одном процессе Xray.
-  batch_size: 512
-  # Максимальное число одновременно работающих процессов Xray для разных групп профилей.
-  # Вместе с request_concurrency ограничивает общую нагрузку до 128 одновременных запросов.
-  batch_concurrency: 2
-  # Интервал повторной проверки готовности SOCKS-порта Xray в секундах.
-  listener_poll_interval_seconds: 0.02
-  # Время ожидания штатного завершения Xray перед принудительной остановкой в секундах.
-  process_shutdown_timeout_seconds: 2.0
-  # Максимальное число HTTP-соединений одного IP-запроса через локальный SOCKS-прокси.
-  connection_max_connections: 1
-  # Максимальное число сохраняемых HTTP-соединений после IP-запроса.
-  connection_max_keepalive_connections: 0
 
 behavior:
   # Если true, публикуются только профили, впервые замеченные не более max_age_hours назад.
@@ -74,6 +42,48 @@ behavior:
   # Если true, завершать программу с кодом 2, когда за запуск не добавлено ни одного профиля.
   fail_on_empty: false
 
-xray:
-  # Версия Xray, которую GitHub Actions скачивает и проверяет по SHA-512.
-  version: v26.3.27
+telegram:
+  # Глубина окна публичных превью в часах: собираются только сообщения за последние трое суток.
+  max_post_age_hours: 72
+  # Необязательный предел числа профилей, принимаемых от одного канала за запуск.
+  max_profiles_per_channel: null
+  # Необязательный предел числа страниц пагинации на канал.
+  max_pages_per_channel: null
+  # Число каналов, чьи превью загружаются одновременно.
+  concurrency: 12
+  # Предельное время ожидания ответа одной страницы предпросмотра в секундах.
+  timeout_seconds: 20.0
+  # Максимальный размер страницы предпросмотра в байтах.
+  max_response_bytes: 5242880
+  # Максимальное число разрешённых HTTPS-перенаправлений для одной страницы.
+  max_redirects: 3
+  quality:
+    # Балл, начиная с которого канал признаётся качественным.
+    approval_score: 70.0
+    # Число наблюдений, после которого канал может получить статус approved.
+    min_evidence_runs: 2
+    # Минимум URI-кандидатов в окне, иначе канал исключается.
+    min_supported_candidates: 2
+    # Минимум свежих сообщений в окне, иначе канал исключается.
+    min_fresh_posts: 2
+    # Минимальная уверенность оценки; ниже канал переводится в watch.
+    minimum_confidence: 0.5
+    # Надбавка к порогу для новых каналов с малой историей.
+    new_channel_margin: 20.0
+    # Допустимый недобор балла для перевода в watch вместо excluded.
+    near_threshold_margin: 8.0
+    # Период полураспада влияния прошлых оценок в часах.
+    history_half_life_hours: 72.0
+    # Сглаживающие приоры доли профилей, прошедших глубокий анализ.
+    analysis_prior_passes: 1.0
+    analysis_prior_failures: 1.0
+    # Веса компонент итогового балла канала.
+    activity_weight: 15.0
+    supported_yield_weight: 15.0
+    static_security_weight: 20.0
+    uniqueness_weight: 10.0
+    nonduplication_weight: 5.0
+    profile_coverage_weight: 10.0
+    text_depth_weight: 5.0
+    cadence_weight: 5.0
+    depth_weight: 15.0

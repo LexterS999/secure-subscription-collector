@@ -109,3 +109,55 @@ def test_dedup_removes_cosmetic_duplicate_with_reordered_query_and_remark() -> N
     )
     assert first is not None and second is not None
     assert deduplicate([first, second]) == [first]
+
+
+@pytest.mark.parametrize(
+    ("first_uri", "second_uri"),
+    [
+        (
+            "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+            "?encryption=none&security=tls&sni=a.example&fp=chrome&type=ws&path=%2Fgate",
+            "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+            "?encryption=none&security=tls&sni=a.example&fp=chrome&type=websocket&path=%2Fgate",
+        ),
+        (
+            "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+            "?encryption=none&security=tls&sni=a.example&fp=chrome&type=tcp",
+            "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+            "?encryption=none&security=tls&sni=a.example&fp=chrome&type=raw",
+        ),
+        (
+            "trojan://correct-horse@node.example.org:443"
+            "?security=tls&sni=a.example&fp=chrome&type=tcp&vendor-tag=promo",
+            "trojan://correct-horse@node.example.org:443?security=tls&sni=a.example&fp=chrome",
+        ),
+        (
+            "hy2://hy2-password@hy2.example.org:443?security=tls&sni=a.example#one",
+            "hysteria2://hy2-password@hy2.example.org:443?sni=a.example&security=tls#two",
+        ),
+    ],
+)
+def test_dedup_matches_v2rayng_outbound_equivalence(first_uri: str, second_uri: str) -> None:
+    """Mirror v2rayNG identity: transport aliases and vendor noise do not create new configs."""
+    first = parse_profile(first_uri, "https://source-a.example/list")
+    second = parse_profile(second_uri, "https://source-b.example/list")
+    assert first is not None and second is not None
+    assert profile_fingerprint(first) == profile_fingerprint(second)
+    assert deduplicate([first, second]) == [first]
+
+
+def test_dedup_keeps_distinct_stream_settings_as_separate_configurations() -> None:
+    """Catches over-merging of profiles that clients treat as different connections."""
+    ws_profile = parse_profile(
+        "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+        "?encryption=none&security=tls&sni=a.example&fp=chrome&type=ws&path=%2Fgate",
+        "https://source-a.example/list",
+    )
+    grpc_profile = parse_profile(
+        "vless://123e4567-e89b-12d3-a456-426614174000@node.example.org:443"
+        "?encryption=none&security=tls&sni=a.example&fp=chrome&type=grpc&serviceName=svc",
+        "https://source-b.example/list",
+    )
+    assert ws_profile is not None and grpc_profile is not None
+    assert profile_fingerprint(ws_profile) != profile_fingerprint(grpc_profile)
+    assert deduplicate([ws_profile, grpc_profile]) == [ws_profile, grpc_profile]

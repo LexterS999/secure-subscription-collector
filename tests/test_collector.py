@@ -2,21 +2,25 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 
-from subscription_collector import cli
 from subscription_collector.cli import run_collection
 from subscription_collector.decoder import extract_candidate_lines
 from subscription_collector.fetcher import fetch_sources
 from subscription_collector.input_reader import InputError, read_input_urls
-from subscription_collector.models import Freshness, ProbeResult
+from subscription_collector.models import Freshness
 from subscription_collector.state import update_state
 from subscription_collector.writer import write_text_atomic
 
+TROJAN_TLS = (
+    "trojan://correct-horse@node.example.org:443"
+    "?security=tls&sni=www.example.com&fp=chrome&type=tcp#source-name"
+)
 VLESS_SECURE = (
     "vless://123e4567-e89b-12d3-a456-426614174000@edge.example.org:443"
     "?encryption=none&security=tls&sni=www.example.com&fp=chrome&type=grpc#source"
@@ -47,8 +51,8 @@ def test_input_reader_rejects_invalid_source_url(tmp_path: Path, line: str) -> N
 def test_decoder_extracts_allowed_uri_from_base64_and_skips_malformed_line() -> None:
     """Catches a malformed encoded URI aborting extraction of valid subsequent profiles."""
     malformed = "vless://123e4567-e89b-12d3-a456-426614174000@[broken:443?security=tls"
-    payload = base64.b64encode(f"{malformed}\n{VLESS_SECURE}\n".encode()).decode()
-    assert extract_candidate_lines(payload) == [VLESS_SECURE]
+    payload = base64.b64encode(f"{malformed}\n{TROJAN_TLS}\n".encode()).decode()
+    assert extract_candidate_lines(payload) == [TROJAN_TLS]
 
 
 @pytest.mark.parametrize("scheme", ["vmess", "ss", "wireguard", "naive", "http", "socks5"])
@@ -67,7 +71,7 @@ def test_fetcher_excludes_source_with_last_modified_older_than_72_hours(config_f
             return httpx.Response(
                 200,
                 headers={"Last-Modified": old.strftime("%a, %d %b %Y %H:%M:%S GMT")},
-                text=VLESS_SECURE,
+                text=TROJAN_TLS,
             )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -131,49 +135,82 @@ def test_atomic_writer_replaces_previous_contents(tmp_path: Path) -> None:
     assert output_path.read_text(encoding="utf-8") == "new\n"
 
 
-def test_collection_publishes_profile_when_xray_validation_succeeds(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_for
+def test_collection_publishes_profiles_passing_static_and_deep_analysis(
+    tmp_path: Path, config_for
 ) -> None:
-    """Catches a validation stage that drops a profile despite a positive Xray IP result."""
-
-    async def validated(profiles, *_args, **_kwargs) -> list[ProbeResult]:
-        return [ProbeResult(True, 1, 8) for _ in profiles]
-
-    monkeypatch.setattr(cli, "probe_batch", validated)
+    """Catches a pipeline that drops profiles despite clean static and deep checks."""
 
     async def exercise() -> int:
         input_path = tmp_path / "input.txt"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text=VLESS_SECURE)
+            return httpx.Response(200, text=f"{TROJAN_TLS}\n{VLESS_SECURE}\n")
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await run_collection(
-                config=config_for(input_path=input_path, xray_path=tmp_path / "xray"),
-                client=client,
-            )
+            return await run_collection(config=config_for(input_path=input_path), client=client)
 
     assert asyncio.run(exercise()) == 0
+    assert (tmp_path / "output" / "trojan.txt").read_text(encoding="utf-8").count("\n") == 1
     assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8").count("\n") == 1
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["counts"]["emitted_profiles"] == 2
+    assert set(report["timing_ms"]) >= {
+        "sources_fetch",
+        "static_filter",
+        "deduplication",
+        "publication",
+        "total",
+    }
 
 
-def test_collection_excludes_profile_when_xray_validation_fails(tmp_path: Path, config_for) -> None:
-    """Catches publication or state mutation after a failed proxied IP response."""
+def test_collection_excludes_insecure_and_low_quality_profiles(tmp_path: Path, config_for) -> None:
+    """Catches publication of profiles failing the strict policy or the deep analysis."""
+    insecure = TROJAN_TLS.replace(
+        "?security=tls&sni=www.example.com&fp=chrome&type=tcp#source-name",
+        "?security=tls&sni=www.example.com&fp=chrome&type=tcp&allowInsecure=1#insecure",
+    )
+    unknown_fingerprint = (
+        "trojan://correct-horse@other.example.org:443"
+        "?security=tls&sni=www.example.com&fp=unknownbrowser&type=tcp#bad-fp"
+    )
 
     async def exercise() -> int:
         input_path = tmp_path / "input.txt"
         input_path.write_text("https://source.example/list\n", encoding="utf-8")
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text=VLESS_SECURE)
+            return httpx.Response(200, text=f"{insecure}\n{unknown_fingerprint}\n")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_collection(config=config_for(input_path=input_path), client=client)
+
+    assert asyncio.run(exercise()) == 0
+    assert (tmp_path / "output" / "trojan.txt").read_text(encoding="utf-8") == ""
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    excluded = report["counts"]["excluded"]
+    assert excluded["insecure_flag"] == 1
+    assert excluded["unknown_fingerprint"] == 1
+
+
+def test_collection_writes_empty_approved_channel_list_without_handles(
+    tmp_path: Path, config_for
+) -> None:
+    """Catches a quality-channel registry polluted when no channels were discovered."""
+    tg_channels_path = tmp_path / "tg_channels.txt"
+
+    async def exercise() -> int:
+        input_path = tmp_path / "input.txt"
+        input_path.write_text("https://source.example/list\n", encoding="utf-8")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=TROJAN_TLS)
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await run_collection(
-                config=config_for(input_path=input_path, xray_path=tmp_path / "missing-xray"),
+                config=config_for(input_path=input_path, tg_channels_path=tg_channels_path),
                 client=client,
             )
 
     assert asyncio.run(exercise()) == 0
-    assert (tmp_path / "output" / "vless.txt").read_text(encoding="utf-8") == ""
-    assert (tmp_path / "state.json").read_text(encoding="utf-8") == "{}\n"
+    assert tg_channels_path.read_text(encoding="utf-8") == ""

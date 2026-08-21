@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -9,7 +10,7 @@ from typing import Any
 from .channel_quality import ChannelEvaluation, ChannelStateRecord
 from .writer import write_json_atomic, write_text_atomic
 
-_STATE_VERSION = 3
+_STATE_VERSION = 4
 _VALID_STATUSES = {"candidate", "approved", "watch", "excluded"}
 
 
@@ -35,8 +36,8 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         "last_evaluated_at",
         "confidence",
         "required_score",
-        "xray_successes",
-        "xray_failures",
+        "deep_accepted",
+        "deep_rejected",
     }
     if set(value) != required or value["status"] not in _VALID_STATUSES:
         return None
@@ -59,7 +60,7 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
             or not minimum <= float(value[field]) <= maximum
         ):
             return None
-    for field_name in ("xray_successes", "xray_failures"):
+    for field_name in ("deep_accepted", "deep_rejected"):
         if (
             isinstance(value[field_name], bool)
             or not isinstance(value[field_name], int)
@@ -79,16 +80,14 @@ def _parse_record(value: Any) -> ChannelStateRecord | None:
         last_evaluated_at=value["last_evaluated_at"],
         confidence=round(float(value["confidence"]), 4),
         required_score=round(float(value["required_score"]), 2),
-        xray_successes=value["xray_successes"],
-        xray_failures=value["xray_failures"],
+        deep_accepted=value["deep_accepted"],
+        deep_rejected=value["deep_rejected"],
     )
 
 
 def load_channel_state(path: Path) -> dict[str, ChannelStateRecord]:
     """Load current redacted state; records from prior schema versions are discarded."""
     try:
-        import json
-
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
@@ -138,8 +137,8 @@ def update_channel_state(
                 "last_evaluated_at": record.last_evaluated_at,
                 "confidence": record.confidence,
                 "required_score": record.required_score,
-                "xray_successes": record.xray_successes,
-                "xray_failures": record.xray_failures,
+                "deep_accepted": record.deep_accepted,
+                "deep_rejected": record.deep_rejected,
             }
             for key, record in sorted(state.items())
         },

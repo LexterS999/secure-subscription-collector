@@ -65,7 +65,7 @@ def test_recent_post_fetcher_paginates_until_preview_reaches_old_messages(config
     async def exercise() -> None:
         requests: list[str] = []
         fresh = "2026-08-15T11:30:00+00:00"
-        old = "2026-08-13T11:30:00+00:00"
+        old = "2026-08-11T11:30:00+00:00"
 
         def page(message_id: int, published_at: str) -> str:
             return f"""

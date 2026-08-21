@@ -25,7 +25,7 @@ HEALTHY = ChannelMetrics(
     supported_candidates=2,
     static_accepted=2,
     unique_profiles=2,
-    xray_passed=2,
+    deep_passed=2,
 )
 EMPTY = ChannelMetrics(
     preview_available=True,
@@ -117,9 +117,9 @@ def test_preview_transport_failure_preserves_existing_approved_channel() -> None
     assert result.evidence_runs == approved.evidence_runs
 
 
-def test_adaptive_quality_increases_after_successful_xray_observation() -> None:
-    """Prevent Xray outcomes from being ignored by the approved adaptive model."""
-    failed = ChannelMetrics(
+def test_adaptive_quality_increases_after_successful_deep_analysis() -> None:
+    """Prevent deep-analysis outcomes from being ignored by the adaptive model."""
+    rejected = ChannelMetrics(
         preview_available=True,
         fresh_posts=2,
         all_uri_candidates=2,
@@ -127,10 +127,10 @@ def test_adaptive_quality_increases_after_successful_xray_observation() -> None:
         static_accepted=2,
         unique_profiles=2,
         duplicate_posts=0,
-        xray_passed=0,
-        xray_failed=3,
+        deep_passed=0,
+        deep_failed=3,
     )
-    recovered = ChannelMetrics(
+    accepted = ChannelMetrics(
         preview_available=True,
         fresh_posts=2,
         all_uri_candidates=2,
@@ -138,19 +138,19 @@ def test_adaptive_quality_increases_after_successful_xray_observation() -> None:
         static_accepted=2,
         unique_profiles=2,
         duplicate_posts=0,
-        xray_passed=3,
-        xray_failed=0,
+        deep_passed=3,
+        deep_failed=0,
     )
 
-    first = evaluate_channel("quality_channel", failed, None, SETTINGS, NOW)
-    second = evaluate_channel("quality_channel", recovered, first.to_state_record(), SETTINGS, NOW)
+    first = evaluate_channel("quality_channel", rejected, None, SETTINGS, NOW)
+    second = evaluate_channel("quality_channel", accepted, first.to_state_record(), SETTINGS, NOW)
 
     assert second.score > first.score
     assert second.confidence >= first.confidence
     assert second.required_score <= first.required_score
 
 
-def test_legacy_xray_state_is_discarded_for_content_quality_migration(tmp_path: Path) -> None:
+def test_legacy_state_is_discarded_for_schema_migration(tmp_path: Path) -> None:
     state_path = tmp_path / "channel_state.json"
     state_path.write_text(
         json.dumps(
@@ -160,10 +160,8 @@ def test_legacy_xray_state_is_discarded_for_content_quality_migration(tmp_path: 
                     sha256(b"legacy").hexdigest(): {
                         "status": "excluded",
                         "score": 40.0,
-                        "reason": "no_xray_success",
+                        "reason": "low_yield",
                         "evidence_runs": 2,
-                        "alpha_success": 1,
-                        "beta_failure": 5,
                         "first_seen_at": "2026-08-15T00:00:00Z",
                         "last_seen_at": "2026-08-15T00:00:00Z",
                         "last_evaluated_at": "2026-08-15T00:00:00Z",
@@ -186,5 +184,5 @@ def test_channel_state_round_trip_preserves_adaptive_evidence(tmp_path: Path) ->
 
     assert restored.confidence == evaluation.confidence
     assert restored.required_score == evaluation.required_score
-    assert restored.xray_successes == evaluation.xray_successes
-    assert restored.xray_failures == evaluation.xray_failures
+    assert restored.deep_accepted == evaluation.deep_accepted
+    assert restored.deep_rejected == evaluation.deep_rejected

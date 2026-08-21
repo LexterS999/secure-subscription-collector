@@ -48,8 +48,8 @@ class ChannelQualityConfig:
     new_channel_margin: float = 20.0
     near_threshold_margin: float = 8.0
     history_half_life_hours: float = 72.0
-    xray_prior_successes: float = 1.0
-    xray_prior_failures: float = 1.0
+    analysis_prior_passes: float = 1.0
+    analysis_prior_failures: float = 1.0
     activity_weight: float = 15.0
     supported_yield_weight: float = 15.0
     static_security_weight: float = 20.0
@@ -58,14 +58,14 @@ class ChannelQualityConfig:
     profile_coverage_weight: float = 10.0
     text_depth_weight: float = 5.0
     cadence_weight: float = 5.0
-    history_weight: float = 15.0
+    depth_weight: float = 15.0
 
 
 @dataclass(frozen=True)
 class TelegramConfig:
     """Public preview collection limits shared by every fetched channel."""
 
-    max_post_age_hours: int = 24
+    max_post_age_hours: int = 72
     max_profiles_per_channel: int | None = None
     max_pages_per_channel: int | None = None
     concurrency: int = 12
@@ -81,8 +81,7 @@ class PathsConfig:
     output_dir: Path
     report_path: Path
     state_path: Path
-    xray_path: Path
-    tg_channels_path: Path = Path("tg_channels.txt")
+    tg_channels_path: Path = Path("output/tg_channels.txt")
     telegram_state_path: Path = Path(".collector/channel_state.json")
     telegram_registry_path: Path = Path(".collector/tg_registry.txt")
 
@@ -104,31 +103,9 @@ class StaticFilterConfig:
 
 
 @dataclass(frozen=True)
-class IpValidationConfig:
-    ip_echo_urls: tuple[str, ...]
-    http_check_urls: tuple[str, ...]
-    accepted_http_statuses: tuple[int, ...]
-    timeout_seconds: float
-    config_test_timeout_seconds: float
-    startup_timeout_seconds: float
-    request_concurrency: int
-    batch_size: int
-    batch_concurrency: int
-    listener_poll_interval_seconds: float
-    process_shutdown_timeout_seconds: float
-    connection_max_connections: int
-    connection_max_keepalive_connections: int
-
-
-@dataclass(frozen=True)
 class BehaviorConfig:
     strict_first_seen: bool
     fail_on_empty: bool
-
-
-@dataclass(frozen=True)
-class XrayConfig:
-    version: str
 
 
 @dataclass(frozen=True)
@@ -136,9 +113,7 @@ class CollectorConfig:
     paths: PathsConfig
     sources: SourcesConfig
     static_filter: StaticFilterConfig
-    ip_validation: IpValidationConfig
     behavior: BehaviorConfig
-    xray: XrayConfig
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
 
@@ -185,16 +160,12 @@ def _integer(section: dict[str, Any], key: str, location: str, minimum: int) -> 
     return value
 
 
-def _optional_integer(
-    section: dict[str, Any], key: str, location: str, minimum: int
-) -> int | None:
+def _optional_integer(section: dict[str, Any], key: str, location: str, minimum: int) -> int | None:
     if key not in section or section[key] is None:
         return None
     value = section[key]
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise ConfigError(
-            f"{location}.{key} должен быть целым числом не меньше {minimum} или null"
-        )
+        raise ConfigError(f"{location}.{key} должен быть целым числом не меньше {minimum} или null")
     return value
 
 
@@ -202,25 +173,6 @@ def _number(section: dict[str, Any], key: str, location: str, minimum: float) ->
     value = section[key]
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value < minimum:
         raise ConfigError(f"{location}.{key} должен быть числом не меньше {minimum}")
-    return float(value)
-
-
-def _bounded_number(
-    section: dict[str, Any],
-    key: str,
-    location: str,
-    minimum: float,
-    maximum: float | None = None,
-) -> float:
-    value = section[key]
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or value < minimum
-        or (maximum is not None and value > maximum)
-    ):
-        bounds = f"от {minimum} до {maximum}" if maximum is not None else f"не меньше {minimum}"
-        raise ConfigError(f"{location}.{key} должен быть числом {bounds}")
     return float(value)
 
 
@@ -233,8 +185,16 @@ def _optional_number(
 ) -> float | None:
     if key not in section or section[key] is None:
         return None
-    placeholder: dict[str, Any] = {key: section[key]}
-    return _bounded_number(placeholder, key, location, minimum, maximum)
+    value = section[key]
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or value < minimum
+        or (maximum is not None and value > maximum)
+    ):
+        bounds = f"от {minimum} до {maximum}" if maximum is not None else f"не меньше {minimum}"
+        raise ConfigError(f"{location}.{key} должен быть числом {bounds}")
+    return float(value)
 
 
 def _boolean(section: dict[str, Any], key: str, location: str) -> bool:
@@ -257,30 +217,6 @@ def _https_url_value(value: Any, location: str) -> str:
     return value
 
 
-def _https_urls(section: dict[str, Any], key: str, location: str) -> tuple[str, ...]:
-    value = section[key]
-    if not isinstance(value, list) or not value:
-        raise ConfigError(f"{location}.{key} должен быть непустым YAML-списком HTTPS-адресов")
-    urls = tuple(_https_url_value(item, f"{location}.{key}") for item in value)
-    if len(set(urls)) != len(urls):
-        raise ConfigError(f"{location}.{key} не должен содержать повторяющиеся HTTPS-адреса")
-    return urls
-
-
-def _http_statuses(section: dict[str, Any], key: str, location: str) -> tuple[int, ...]:
-    value = section[key]
-    if not isinstance(value, list) or not value:
-        raise ConfigError(f"{location}.{key} должен быть непустым YAML-списком HTTP-кодов")
-    statuses: list[int] = []
-    for item in value:
-        if isinstance(item, bool) or not isinstance(item, int) or not 100 <= item <= 599:
-            raise ConfigError(f"{location}.{key} должен содержать HTTP-коды от 100 до 599")
-        statuses.append(item)
-    if len(set(statuses)) != len(statuses):
-        raise ConfigError(f"{location}.{key} не должен содержать повторяющиеся HTTP-коды")
-    return tuple(statuses)
-
-
 _PATHS_OPTIONAL_KEYS = {"tg_channels", "telegram_state", "telegram_registry"}
 _TELEGRAM_KEYS = {
     "max_post_age_hours",
@@ -301,8 +237,8 @@ _CHANNEL_QUALITY_KEYS = {
     "new_channel_margin",
     "near_threshold_margin",
     "history_half_life_hours",
-    "xray_prior_successes",
-    "xray_prior_failures",
+    "analysis_prior_passes",
+    "analysis_prior_failures",
     "activity_weight",
     "supported_yield_weight",
     "static_security_weight",
@@ -311,26 +247,20 @@ _CHANNEL_QUALITY_KEYS = {
     "profile_coverage_weight",
     "text_depth_weight",
     "cadence_weight",
-    "history_weight",
+    "depth_weight",
 }
 
 
 def _paths_config(payload: dict[str, Any]) -> PathsConfig:
     section = _mapping(payload["paths"], "paths")
-    _check_keys(
-        section,
-        "paths",
-        {"input", "output_dir", "report", "state", "xray_path"},
-        _PATHS_OPTIONAL_KEYS,
-    )
+    _check_keys(section, "paths", {"input", "output_dir", "report", "state"}, _PATHS_OPTIONAL_KEYS)
     return PathsConfig(
         input_path=Path(_string(section, "input", "paths")),
         output_dir=Path(_string(section, "output_dir", "paths")),
         report_path=Path(_string(section, "report", "paths")),
         state_path=Path(_string(section, "state", "paths")),
-        xray_path=Path(_string(section, "xray_path", "paths")),
         tg_channels_path=Path(
-            _or_default(_optional_string(section, "tg_channels", "paths"), "tg_channels.txt")
+            _or_default(_optional_string(section, "tg_channels", "paths"), "output/tg_channels.txt")
         ),
         telegram_state_path=Path(
             _or_default(
@@ -380,56 +310,6 @@ def _static_filter_config(payload: dict[str, Any]) -> StaticFilterConfig:
     )
 
 
-def _ip_validation_config(payload: dict[str, Any]) -> IpValidationConfig:
-    section = _mapping(payload["ip_validation"], "ip_validation")
-    _check_keys(
-        section,
-        "ip_validation",
-        {
-            "ip_echo_urls",
-            "http_check_urls",
-            "accepted_http_statuses",
-            "timeout_seconds",
-            "config_test_timeout_seconds",
-            "startup_timeout_seconds",
-            "request_concurrency",
-            "batch_size",
-            "batch_concurrency",
-            "listener_poll_interval_seconds",
-            "process_shutdown_timeout_seconds",
-            "connection_max_connections",
-            "connection_max_keepalive_connections",
-        },
-    )
-    return IpValidationConfig(
-        ip_echo_urls=_https_urls(section, "ip_echo_urls", "ip_validation"),
-        http_check_urls=_https_urls(section, "http_check_urls", "ip_validation"),
-        accepted_http_statuses=_http_statuses(section, "accepted_http_statuses", "ip_validation"),
-        timeout_seconds=_number(section, "timeout_seconds", "ip_validation", 0.000001),
-        config_test_timeout_seconds=_number(
-            section, "config_test_timeout_seconds", "ip_validation", 0.000001
-        ),
-        startup_timeout_seconds=_number(
-            section, "startup_timeout_seconds", "ip_validation", 0.000001
-        ),
-        request_concurrency=_integer(section, "request_concurrency", "ip_validation", 1),
-        batch_size=_integer(section, "batch_size", "ip_validation", 1),
-        batch_concurrency=_integer(section, "batch_concurrency", "ip_validation", 1),
-        listener_poll_interval_seconds=_number(
-            section, "listener_poll_interval_seconds", "ip_validation", 0.000001
-        ),
-        process_shutdown_timeout_seconds=_number(
-            section, "process_shutdown_timeout_seconds", "ip_validation", 0.000001
-        ),
-        connection_max_connections=_integer(
-            section, "connection_max_connections", "ip_validation", 1
-        ),
-        connection_max_keepalive_connections=_integer(
-            section, "connection_max_keepalive_connections", "ip_validation", 0
-        ),
-    )
-
-
 def _behavior_config(payload: dict[str, Any]) -> BehaviorConfig:
     section = _mapping(payload["behavior"], "behavior")
     _check_keys(section, "behavior", {"strict_first_seen", "fail_on_empty"})
@@ -437,12 +317,6 @@ def _behavior_config(payload: dict[str, Any]) -> BehaviorConfig:
         strict_first_seen=_boolean(section, "strict_first_seen", "behavior"),
         fail_on_empty=_boolean(section, "fail_on_empty", "behavior"),
     )
-
-
-def _xray_config(payload: dict[str, Any]) -> XrayConfig:
-    section = _mapping(payload["xray"], "xray")
-    _check_keys(section, "xray", {"version"})
-    return XrayConfig(version=_string(section, "version", "xray"))
 
 
 def _telegram_quality_config(payload: Any) -> ChannelQualityConfig:
@@ -471,8 +345,8 @@ def _telegram_quality_config(payload: Any) -> ChannelQualityConfig:
         new_channel_margin=bounded("new_channel_margin", 20.0, 0.0),
         near_threshold_margin=bounded("near_threshold_margin", 8.0, 0.0),
         history_half_life_hours=bounded("history_half_life_hours", 72.0, 0.000001),
-        xray_prior_successes=bounded("xray_prior_successes", 1.0, 0.0),
-        xray_prior_failures=bounded("xray_prior_failures", 1.0, 0.0),
+        analysis_prior_passes=bounded("analysis_prior_passes", 1.0, 0.0),
+        analysis_prior_failures=bounded("analysis_prior_failures", 1.0, 0.0),
         activity_weight=bounded("activity_weight", 15.0, 0.0),
         supported_yield_weight=bounded("supported_yield_weight", 15.0, 0.0),
         static_security_weight=bounded("static_security_weight", 20.0, 0.0),
@@ -481,7 +355,7 @@ def _telegram_quality_config(payload: Any) -> ChannelQualityConfig:
         profile_coverage_weight=bounded("profile_coverage_weight", 10.0, 0.0),
         text_depth_weight=bounded("text_depth_weight", 5.0, 0.0),
         cadence_weight=bounded("cadence_weight", 5.0, 0.0),
-        history_weight=bounded("history_weight", 15.0, 0.0),
+        depth_weight=bounded("depth_weight", 15.0, 0.0),
     )
 
 
@@ -492,7 +366,7 @@ def _telegram_config(payload: Any) -> TelegramConfig:
     _check_keys(section, "telegram", set(), _TELEGRAM_KEYS)
     max_post_age_hours = _or_default(
         _optional_integer(section, "max_post_age_hours", "telegram", 1),
-        24,
+        72,
     )
     if max_post_age_hours > 72:
         raise ConfigError("telegram.max_post_age_hours должен быть целым числом от 1 до 72")
@@ -522,7 +396,6 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "output_dir": str(config.paths.output_dir),
             "report": str(config.paths.report_path),
             "state": str(config.paths.state_path),
-            "xray_path": str(config.paths.xray_path),
             "tg_channels": str(config.paths.tg_channels_path),
             "telegram_state": str(config.paths.telegram_state_path),
             "telegram_registry": str(config.paths.telegram_registry_path),
@@ -539,30 +412,10 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "workers": config.static_filter.workers,
             "batch_size": config.static_filter.batch_size,
         },
-        "ip_validation": {
-            "ip_echo_urls": list(config.ip_validation.ip_echo_urls),
-            "http_check_urls": list(config.ip_validation.http_check_urls),
-            "accepted_http_statuses": list(config.ip_validation.accepted_http_statuses),
-            "timeout_seconds": config.ip_validation.timeout_seconds,
-            "config_test_timeout_seconds": config.ip_validation.config_test_timeout_seconds,
-            "startup_timeout_seconds": config.ip_validation.startup_timeout_seconds,
-            "request_concurrency": config.ip_validation.request_concurrency,
-            "batch_size": config.ip_validation.batch_size,
-            "batch_concurrency": config.ip_validation.batch_concurrency,
-            "listener_poll_interval_seconds": config.ip_validation.listener_poll_interval_seconds,
-            "process_shutdown_timeout_seconds": (
-                config.ip_validation.process_shutdown_timeout_seconds
-            ),
-            "connection_max_connections": config.ip_validation.connection_max_connections,
-            "connection_max_keepalive_connections": (
-                config.ip_validation.connection_max_keepalive_connections
-            ),
-        },
         "behavior": {
             "strict_first_seen": config.behavior.strict_first_seen,
             "fail_on_empty": config.behavior.fail_on_empty,
         },
-        "xray": {"version": config.xray.version},
         "telegram": {
             "max_post_age_hours": config.telegram.max_post_age_hours,
             "max_profiles_per_channel": config.telegram.max_profiles_per_channel,
@@ -580,8 +433,8 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
                 "new_channel_margin": config.telegram.quality.new_channel_margin,
                 "near_threshold_margin": config.telegram.quality.near_threshold_margin,
                 "history_half_life_hours": config.telegram.quality.history_half_life_hours,
-                "xray_prior_successes": config.telegram.quality.xray_prior_successes,
-                "xray_prior_failures": config.telegram.quality.xray_prior_failures,
+                "analysis_prior_passes": config.telegram.quality.analysis_prior_passes,
+                "analysis_prior_failures": config.telegram.quality.analysis_prior_failures,
                 "activity_weight": config.telegram.quality.activity_weight,
                 "supported_yield_weight": config.telegram.quality.supported_yield_weight,
                 "static_security_weight": config.telegram.quality.static_security_weight,
@@ -590,16 +443,14 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
                 "profile_coverage_weight": config.telegram.quality.profile_coverage_weight,
                 "text_depth_weight": config.telegram.quality.text_depth_weight,
                 "cadence_weight": config.telegram.quality.cadence_weight,
-                "history_weight": config.telegram.quality.history_weight,
+                "depth_weight": config.telegram.quality.depth_weight,
             },
         },
     }
     _paths_config(payload)
     _sources_config(payload)
     _static_filter_config(payload)
-    _ip_validation_config(payload)
     _behavior_config(payload)
-    _xray_config(payload)
     _telegram_config(payload["telegram"])
     return config
 
@@ -616,7 +467,7 @@ def load_config(path: Path) -> CollectorConfig:
     _check_keys(
         root,
         "Корень config.yaml",
-        {"paths", "sources", "static_filter", "ip_validation", "behavior", "xray"},
+        {"paths", "sources", "static_filter", "behavior"},
         {"telegram"},
     )
     return validate_config(
@@ -624,9 +475,7 @@ def load_config(path: Path) -> CollectorConfig:
             paths=_paths_config(root),
             sources=_sources_config(root),
             static_filter=_static_filter_config(root),
-            ip_validation=_ip_validation_config(root),
             behavior=_behavior_config(root),
-            xray=_xray_config(root),
             telegram=_telegram_config(root.get("telegram")),
         )
     )
