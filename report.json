@@ -1,51 +1,51 @@
 {
   "counts": {
-    "accepted_profiles": 53479,
-    "candidate_lines": 138453,
-    "emitted_profiles": 3548,
+    "accepted_profiles": 53278,
+    "candidate_lines": 137584,
+    "emitted_profiles": 3277,
     "excluded": {
-      "config_invalid": 4540,
+      "config_invalid": 5632,
       "http_error:HTTPStatusError": 2,
-      "insecure_flag": 7649,
-      "invalid_or_unsupported": 24,
-      "invalid_reality_key": 90,
-      "missing_fingerprint": 15177,
-      "missing_required_secret": 36849,
-      "missing_security": 16355,
-      "missing_sni": 4979,
-      "no_endpoint_confirmation": 8700,
-      "probe_error": 40,
+      "insecure_flag": 7166,
+      "invalid_or_unsupported": 34,
+      "invalid_reality_key": 93,
+      "missing_fingerprint": 15874,
+      "missing_required_secret": 36205,
+      "missing_security": 16140,
+      "missing_sni": 5004,
+      "no_endpoint_confirmation": 8001,
+      "probe_error": 8,
       "response_too_large": 4,
-      "unsupported_transport": 3851
+      "unsupported_transport": 3790
     },
     "fetched_sources": 68,
     "input_sources": 74,
-    "parsed_profiles": 138429,
-    "probed_profiles": 16828,
+    "parsed_profiles": 137550,
+    "probed_profiles": 16918,
     "source_freshness": {
       "failed": 6,
       "recent": 3,
       "unknown": 65
     },
-    "unique_profiles": 16828,
-    "validated_profiles": 3548
+    "unique_profiles": 16918,
+    "validated_profiles": 3277
   },
-  "generated_at": "2026-08-21T08:29:31Z",
+  "generated_at": "2026-08-21T12:29:25Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 29,
-        "total": 29
+        "new": 46,
+        "total": 46
       },
       "trojan": {
-        "new": 1811,
-        "total": 1811
+        "new": 1762,
+        "total": 1762
       },
       "vless": {
-        "new": 1708,
-        "total": 1708
+        "new": 1469,
+        "total": 1469
       }
     }
   },
@@ -57,7 +57,7 @@
     },
     {
       "freshness": "recent",
-      "last_modified": "2026-08-21T08:29:31+00:00",
+      "last_modified": "2026-08-21T10:43:16+00:00",
       "reason": null
     },
     {
@@ -172,7 +172,7 @@
     },
     {
       "freshness": "recent",
-      "last_modified": "2026-08-21T08:29:31+00:00",
+      "last_modified": "2026-08-21T12:29:26+00:00",
       "reason": null
     },
     {
@@ -423,11 +423,11 @@
   ],
   "strict_first_seen": false,
   "timing_ms": {
-    "deduplication": 689,
-    "publication": 270,
-    "sources_fetch": 1343,
-    "static_filter": 17259,
-    "total": 985811,
-    "xray_ip_validation": 966248
+    "deduplication": 680,
+    "publication": 300,
+    "sources_fetch": 1089,
+    "static_filter": 16181,
+    "total": 879779,
+    "xray_ip_validation": 861526
   }
 }
