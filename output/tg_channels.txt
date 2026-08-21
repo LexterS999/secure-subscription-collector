@@ -3,5 +3,4 @@
 @iproxychannel
 @mtmvpn
 @proxy_mtm
-@v2ray313
 @vistav2ray
