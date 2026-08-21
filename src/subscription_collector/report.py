@@ -15,6 +15,7 @@ def build_report(
     stats: RunStats,
     max_age_hours: int,
     strict_first_seen: bool,
+    telegram: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a redacted audit record with aggregate source and publication outcomes."""
     source_rows = [
@@ -25,7 +26,7 @@ def build_report(
         }
         for source in sources
     ]
-    return {
+    report: dict[str, object] = {
         "generated_at": started_at.astimezone(UTC)
         .replace(microsecond=0)
         .isoformat()
@@ -58,3 +59,6 @@ def build_report(
             "excluded": dict(sorted(stats.excluded.items())),
         },
     }
+    if telegram is not None:
+        report["telegram"] = telegram
+    return report

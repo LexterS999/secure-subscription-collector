@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import urlsplit
 
 import yaml
+
+_T = TypeVar("_T")
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -35,12 +37,54 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True)
+class ChannelQualityConfig:
+    """Adaptive public-channel quality model with bounded historical memory."""
+
+    approval_score: float = 70.0
+    min_evidence_runs: int = 2
+    min_supported_candidates: int = 2
+    min_fresh_posts: int = 2
+    minimum_confidence: float = 0.5
+    new_channel_margin: float = 20.0
+    near_threshold_margin: float = 8.0
+    history_half_life_hours: float = 72.0
+    xray_prior_successes: float = 1.0
+    xray_prior_failures: float = 1.0
+    activity_weight: float = 15.0
+    supported_yield_weight: float = 15.0
+    static_security_weight: float = 20.0
+    uniqueness_weight: float = 10.0
+    nonduplication_weight: float = 5.0
+    profile_coverage_weight: float = 10.0
+    text_depth_weight: float = 5.0
+    cadence_weight: float = 5.0
+    history_weight: float = 15.0
+
+
+@dataclass(frozen=True)
+class TelegramConfig:
+    """Public preview collection limits shared by every fetched channel."""
+
+    max_post_age_hours: int = 24
+    max_profiles_per_channel: int | None = None
+    max_pages_per_channel: int | None = None
+    concurrency: int = 12
+    timeout_seconds: float = 20.0
+    max_response_bytes: int = 5_242_880
+    max_redirects: int = 3
+    quality: ChannelQualityConfig = field(default_factory=ChannelQualityConfig)
+
+
+@dataclass(frozen=True)
 class PathsConfig:
     input_path: Path
     output_dir: Path
     report_path: Path
     state_path: Path
     xray_path: Path
+    tg_channels_path: Path = Path("tg_channels.txt")
+    telegram_state_path: Path = Path(".collector/channel_state.json")
+    telegram_registry_path: Path = Path(".collector/tg_registry.txt")
 
 
 @dataclass(frozen=True)
@@ -95,6 +139,7 @@ class CollectorConfig:
     ip_validation: IpValidationConfig
     behavior: BehaviorConfig
     xray: XrayConfig
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
 
 def _mapping(value: Any, location: str) -> dict[str, Any]:
@@ -103,10 +148,12 @@ def _mapping(value: Any, location: str) -> dict[str, Any]:
     return value
 
 
-def _check_keys(section: dict[str, Any], location: str, expected: set[str]) -> None:
+def _check_keys(
+    section: dict[str, Any], location: str, expected: set[str], optional: set[str] = frozenset()
+) -> None:
     actual = set(section)
     missing = expected - actual
-    unknown = actual - expected
+    unknown = actual - expected - set(optional)
     if missing:
         raise ConfigError(
             f"В {location} отсутствуют обязательные параметры: {', '.join(sorted(missing))}"
@@ -122,10 +169,32 @@ def _string(section: dict[str, Any], key: str, location: str) -> str:
     return value
 
 
+def _optional_string(section: dict[str, Any], key: str, location: str) -> str | None:
+    if key not in section or section[key] is None:
+        return None
+    value = section[key]
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{location}.{key} должен быть непустой строкой")
+    return value
+
+
 def _integer(section: dict[str, Any], key: str, location: str, minimum: int) -> int:
     value = section[key]
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise ConfigError(f"{location}.{key} должен быть целым числом не меньше {minimum}")
+    return value
+
+
+def _optional_integer(
+    section: dict[str, Any], key: str, location: str, minimum: int
+) -> int | None:
+    if key not in section or section[key] is None:
+        return None
+    value = section[key]
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ConfigError(
+            f"{location}.{key} должен быть целым числом не меньше {minimum} или null"
+        )
     return value
 
 
@@ -136,11 +205,47 @@ def _number(section: dict[str, Any], key: str, location: str, minimum: float) ->
     return float(value)
 
 
+def _bounded_number(
+    section: dict[str, Any],
+    key: str,
+    location: str,
+    minimum: float,
+    maximum: float | None = None,
+) -> float:
+    value = section[key]
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or value < minimum
+        or (maximum is not None and value > maximum)
+    ):
+        bounds = f"от {minimum} до {maximum}" if maximum is not None else f"не меньше {minimum}"
+        raise ConfigError(f"{location}.{key} должен быть числом {bounds}")
+    return float(value)
+
+
+def _optional_number(
+    section: dict[str, Any],
+    key: str,
+    location: str,
+    minimum: float,
+    maximum: float | None = None,
+) -> float | None:
+    if key not in section or section[key] is None:
+        return None
+    placeholder: dict[str, Any] = {key: section[key]}
+    return _bounded_number(placeholder, key, location, minimum, maximum)
+
+
 def _boolean(section: dict[str, Any], key: str, location: str) -> bool:
     value = section[key]
     if not isinstance(value, bool):
         raise ConfigError(f"{location}.{key} должен быть true или false")
     return value
+
+
+def _or_default(value: _T | None, default: _T) -> _T:
+    return default if value is None else value
 
 
 def _https_url_value(value: Any, location: str) -> str:
@@ -176,15 +281,69 @@ def _http_statuses(section: dict[str, Any], key: str, location: str) -> tuple[in
     return tuple(statuses)
 
 
+_PATHS_OPTIONAL_KEYS = {"tg_channels", "telegram_state", "telegram_registry"}
+_TELEGRAM_KEYS = {
+    "max_post_age_hours",
+    "max_profiles_per_channel",
+    "max_pages_per_channel",
+    "concurrency",
+    "timeout_seconds",
+    "max_response_bytes",
+    "max_redirects",
+    "quality",
+}
+_CHANNEL_QUALITY_KEYS = {
+    "approval_score",
+    "min_evidence_runs",
+    "min_supported_candidates",
+    "min_fresh_posts",
+    "minimum_confidence",
+    "new_channel_margin",
+    "near_threshold_margin",
+    "history_half_life_hours",
+    "xray_prior_successes",
+    "xray_prior_failures",
+    "activity_weight",
+    "supported_yield_weight",
+    "static_security_weight",
+    "uniqueness_weight",
+    "nonduplication_weight",
+    "profile_coverage_weight",
+    "text_depth_weight",
+    "cadence_weight",
+    "history_weight",
+}
+
+
 def _paths_config(payload: dict[str, Any]) -> PathsConfig:
     section = _mapping(payload["paths"], "paths")
-    _check_keys(section, "paths", {"input", "output_dir", "report", "state", "xray_path"})
+    _check_keys(
+        section,
+        "paths",
+        {"input", "output_dir", "report", "state", "xray_path"},
+        _PATHS_OPTIONAL_KEYS,
+    )
     return PathsConfig(
         input_path=Path(_string(section, "input", "paths")),
         output_dir=Path(_string(section, "output_dir", "paths")),
         report_path=Path(_string(section, "report", "paths")),
         state_path=Path(_string(section, "state", "paths")),
         xray_path=Path(_string(section, "xray_path", "paths")),
+        tg_channels_path=Path(
+            _or_default(_optional_string(section, "tg_channels", "paths"), "tg_channels.txt")
+        ),
+        telegram_state_path=Path(
+            _or_default(
+                _optional_string(section, "telegram_state", "paths"),
+                ".collector/channel_state.json",
+            )
+        ),
+        telegram_registry_path=Path(
+            _or_default(
+                _optional_string(section, "telegram_registry", "paths"),
+                ".collector/tg_registry.txt",
+            )
+        ),
     )
 
 
@@ -286,6 +445,75 @@ def _xray_config(payload: dict[str, Any]) -> XrayConfig:
     return XrayConfig(version=_string(section, "version", "xray"))
 
 
+def _telegram_quality_config(payload: Any) -> ChannelQualityConfig:
+    if payload is None:
+        return ChannelQualityConfig()
+    section = _mapping(payload, "telegram.quality")
+    _check_keys(section, "telegram.quality", set(), _CHANNEL_QUALITY_KEYS)
+
+    def bounded(key: str, default: float, minimum: float, maximum: float | None = None) -> float:
+        return _or_default(
+            _optional_number(section, key, "telegram.quality", minimum, maximum), default
+        )
+
+    return ChannelQualityConfig(
+        approval_score=bounded("approval_score", 70.0, 0.0, 100.0),
+        min_evidence_runs=_or_default(
+            _optional_integer(section, "min_evidence_runs", "telegram.quality", 1), 2
+        ),
+        min_supported_candidates=_or_default(
+            _optional_integer(section, "min_supported_candidates", "telegram.quality", 0), 2
+        ),
+        min_fresh_posts=_or_default(
+            _optional_integer(section, "min_fresh_posts", "telegram.quality", 0), 2
+        ),
+        minimum_confidence=bounded("minimum_confidence", 0.5, 0.0, 1.0),
+        new_channel_margin=bounded("new_channel_margin", 20.0, 0.0),
+        near_threshold_margin=bounded("near_threshold_margin", 8.0, 0.0),
+        history_half_life_hours=bounded("history_half_life_hours", 72.0, 0.000001),
+        xray_prior_successes=bounded("xray_prior_successes", 1.0, 0.0),
+        xray_prior_failures=bounded("xray_prior_failures", 1.0, 0.0),
+        activity_weight=bounded("activity_weight", 15.0, 0.0),
+        supported_yield_weight=bounded("supported_yield_weight", 15.0, 0.0),
+        static_security_weight=bounded("static_security_weight", 20.0, 0.0),
+        uniqueness_weight=bounded("uniqueness_weight", 10.0, 0.0),
+        nonduplication_weight=bounded("nonduplication_weight", 5.0, 0.0),
+        profile_coverage_weight=bounded("profile_coverage_weight", 10.0, 0.0),
+        text_depth_weight=bounded("text_depth_weight", 5.0, 0.0),
+        cadence_weight=bounded("cadence_weight", 5.0, 0.0),
+        history_weight=bounded("history_weight", 15.0, 0.0),
+    )
+
+
+def _telegram_config(payload: Any) -> TelegramConfig:
+    if payload is None:
+        return TelegramConfig()
+    section = _mapping(payload, "telegram")
+    _check_keys(section, "telegram", set(), _TELEGRAM_KEYS)
+    max_post_age_hours = _or_default(
+        _optional_integer(section, "max_post_age_hours", "telegram", 1),
+        24,
+    )
+    if max_post_age_hours > 72:
+        raise ConfigError("telegram.max_post_age_hours должен быть целым числом от 1 до 72")
+    return TelegramConfig(
+        max_post_age_hours=max_post_age_hours,
+        max_profiles_per_channel=_optional_integer(
+            section, "max_profiles_per_channel", "telegram", 1
+        ),
+        max_pages_per_channel=_optional_integer(section, "max_pages_per_channel", "telegram", 1),
+        concurrency=_or_default(_optional_integer(section, "concurrency", "telegram", 1), 12),
+        timeout_seconds=_or_default(
+            _optional_number(section, "timeout_seconds", "telegram", 0.000001), 20.0
+        ),
+        max_response_bytes=_or_default(
+            _optional_integer(section, "max_response_bytes", "telegram", 1), 5_242_880
+        ),
+        max_redirects=_or_default(_optional_integer(section, "max_redirects", "telegram", 0), 3),
+        quality=_telegram_quality_config(section.get("quality")),
+    )
+
+
 def validate_config(config: CollectorConfig) -> CollectorConfig:
     """Validate a configuration object after temporary runtime overrides."""
     payload = {
@@ -295,6 +523,9 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "report": str(config.paths.report_path),
             "state": str(config.paths.state_path),
             "xray_path": str(config.paths.xray_path),
+            "tg_channels": str(config.paths.tg_channels_path),
+            "telegram_state": str(config.paths.telegram_state_path),
+            "telegram_registry": str(config.paths.telegram_registry_path),
         },
         "sources": {
             "max_age_hours": config.sources.max_age_hours,
@@ -332,6 +563,36 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "fail_on_empty": config.behavior.fail_on_empty,
         },
         "xray": {"version": config.xray.version},
+        "telegram": {
+            "max_post_age_hours": config.telegram.max_post_age_hours,
+            "max_profiles_per_channel": config.telegram.max_profiles_per_channel,
+            "max_pages_per_channel": config.telegram.max_pages_per_channel,
+            "concurrency": config.telegram.concurrency,
+            "timeout_seconds": config.telegram.timeout_seconds,
+            "max_response_bytes": config.telegram.max_response_bytes,
+            "max_redirects": config.telegram.max_redirects,
+            "quality": {
+                "approval_score": config.telegram.quality.approval_score,
+                "min_evidence_runs": config.telegram.quality.min_evidence_runs,
+                "min_supported_candidates": config.telegram.quality.min_supported_candidates,
+                "min_fresh_posts": config.telegram.quality.min_fresh_posts,
+                "minimum_confidence": config.telegram.quality.minimum_confidence,
+                "new_channel_margin": config.telegram.quality.new_channel_margin,
+                "near_threshold_margin": config.telegram.quality.near_threshold_margin,
+                "history_half_life_hours": config.telegram.quality.history_half_life_hours,
+                "xray_prior_successes": config.telegram.quality.xray_prior_successes,
+                "xray_prior_failures": config.telegram.quality.xray_prior_failures,
+                "activity_weight": config.telegram.quality.activity_weight,
+                "supported_yield_weight": config.telegram.quality.supported_yield_weight,
+                "static_security_weight": config.telegram.quality.static_security_weight,
+                "uniqueness_weight": config.telegram.quality.uniqueness_weight,
+                "nonduplication_weight": config.telegram.quality.nonduplication_weight,
+                "profile_coverage_weight": config.telegram.quality.profile_coverage_weight,
+                "text_depth_weight": config.telegram.quality.text_depth_weight,
+                "cadence_weight": config.telegram.quality.cadence_weight,
+                "history_weight": config.telegram.quality.history_weight,
+            },
+        },
     }
     _paths_config(payload)
     _sources_config(payload)
@@ -339,6 +600,7 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
     _ip_validation_config(payload)
     _behavior_config(payload)
     _xray_config(payload)
+    _telegram_config(payload["telegram"])
     return config
 
 
@@ -355,6 +617,7 @@ def load_config(path: Path) -> CollectorConfig:
         root,
         "Корень config.yaml",
         {"paths", "sources", "static_filter", "ip_validation", "behavior", "xray"},
+        {"telegram"},
     )
     return validate_config(
         CollectorConfig(
@@ -364,5 +627,6 @@ def load_config(path: Path) -> CollectorConfig:
             ip_validation=_ip_validation_config(root),
             behavior=_behavior_config(root),
             xray=_xray_config(root),
+            telegram=_telegram_config(root.get("telegram")),
         )
     )

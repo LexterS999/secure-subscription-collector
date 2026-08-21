@@ -141,6 +141,25 @@ def canonical_preview_url(handle: str) -> str:
     return f"https://t.me/s/{canonical}"
 
 
+def channel_reference_handle(uri: str) -> str | None:
+    """Return the public handle referenced by a seed URI fragment like ``#@name``.
+
+    A fragment that only points at a public channel (``@name``, a ``t.me`` link,
+    or a ``tg://resolve?domain=`` deep link) marks a channel pointer instead of a
+    publishable profile, so the referenced handle is returned for discovery.
+    """
+    _, separator, raw_fragment = uri.partition("#")
+    if not separator:
+        return None
+    candidate = unquote(raw_fragment).strip()
+    if candidate.startswith("@"):
+        return _canonical_handle(candidate[1:])
+    match = _PUBLIC_URL.search(candidate) or _DEEP_LINK.search(candidate)
+    if match is not None:
+        return _canonical_handle(match.group("handle"))
+    return None
+
+
 def _parse_iso_datetime(raw_value: object) -> datetime | None:
     if not isinstance(raw_value, str):
         return None

@@ -60,6 +60,17 @@ class SeenRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class TelegramPost:
+    """Redacted public preview post with only collection-relevant fields."""
+
+    handle: str
+    message_id: str
+    published_at: str
+    text: str
+    hrefs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ProbeResult:
     """Redacted outcome of a transient local proxy IP validation."""
 

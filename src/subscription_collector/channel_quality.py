@@ -21,6 +21,8 @@ class ChannelMetrics:
     posts_with_profiles: int = 0
     total_text_length: int = 0
     span_hours: float = 0.0
+    xray_passed: int = 0
+    xray_failed: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +36,8 @@ class ChannelStateRecord:
     last_evaluated_at: str
     confidence: float = 0.0
     required_score: float = 100.0
+    xray_successes: int = 0
+    xray_failures: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +51,8 @@ class ChannelEvaluation:
     first_seen_at: str
     confidence: float
     required_score: float
+    xray_successes: int = 0
+    xray_failures: int = 0
 
     def to_state_record(self) -> ChannelStateRecord:
         return ChannelStateRecord(
@@ -59,6 +65,8 @@ class ChannelEvaluation:
             last_evaluated_at=self.observed_at,
             confidence=self.confidence,
             required_score=self.required_score,
+            xray_successes=self.xray_successes,
+            xray_failures=self.xray_failures,
         )
 
 
@@ -88,6 +96,18 @@ def _component_weights(settings: ChannelQualityConfig) -> dict[str, float]:
     }
 
 
+def _xray_history_rate(metrics: ChannelMetrics, settings: ChannelQualityConfig) -> float:
+    """Laplace-smoothed Xray success rate; the neutral prior equals 0.5."""
+    prior_successes = max(0.0, settings.xray_prior_successes)
+    prior_failures = max(0.0, settings.xray_prior_failures)
+    passed = max(0, metrics.xray_passed)
+    failed = max(0, metrics.xray_failed)
+    total = prior_successes + prior_failures + passed + failed
+    if total <= 0:
+        return 0.5
+    return (prior_successes + passed) / total
+
+
 def _run_score(
     metrics: ChannelMetrics,
     settings: ChannelQualityConfig,
@@ -111,7 +131,7 @@ def _run_score(
         "profile_coverage": profile_coverage,
         "text_depth": _text_depth(metrics),
         "cadence": _cadence_score(metrics),
-        "history": 0.5,
+        "history": _xray_history_rate(metrics, settings),
     }
     weights = _component_weights(settings)
     weight_total = sum(weights.values()) or 1.0
@@ -186,9 +206,17 @@ def evaluate_channel(
             first_seen_at=previous.first_seen_at,
             confidence=previous.confidence,
             required_score=previous.required_score,
+            xray_successes=previous.xray_successes,
+            xray_failures=previous.xray_failures,
         )
 
     evidence_runs = (previous.evidence_runs if previous is not None else 0) + 1
+    xray_successes = (previous.xray_successes if previous is not None else 0) + max(
+        0, metrics.xray_passed
+    )
+    xray_failures = (previous.xray_failures if previous is not None else 0) + max(
+        0, metrics.xray_failed
+    )
     confidence = _confidence(
         metrics,
         evidence_runs,
@@ -247,4 +275,6 @@ def evaluate_channel(
         first_seen_at=previous.first_seen_at if previous is not None else timestamp,
         confidence=confidence,
         required_score=required_score,
+        xray_successes=xray_successes,
+        xray_failures=xray_failures,
     )
