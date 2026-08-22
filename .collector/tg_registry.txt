@@ -104,7 +104,7 @@
 @vlessconfig
 @vmess_ir
 @vmesskhodam
-@vmessprotocol
+@vpnbaz
 @vpnine1
 @vpnsal
 @vpnserverrr

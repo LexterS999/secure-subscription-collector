@@ -1,63 +1,117 @@
 {
   "counts": {
-    "accepted_profiles": 46702,
-    "candidate_lines": 130533,
-    "checked_endpoints": 9086,
-    "emitted_profiles": 1459,
+    "accepted_profiles": 47475,
+    "candidate_lines": 129604,
+    "checked_endpoints": 9044,
+    "emitted_profiles": 3180,
     "excluded": {
+      "connection_refused": 1,
+      "handshake_rejected": 871,
       "http_404": 3,
-      "insecure_flag": 4618,
-      "insufficient_data": 1,
-      "invalid_alpn": 93,
-      "invalid_grpc_mode": 4,
-      "invalid_or_unsupported": 26,
-      "invalid_reality_key": 63,
-      "invalid_reality_sni": 38,
+      "insecure_flag": 4408,
+      "invalid_alpn": 91,
+      "invalid_grpc_mode": 2,
+      "invalid_or_unsupported": 25,
+      "invalid_reality_key": 47,
+      "invalid_reality_sni": 39,
       "invalid_short_id": 14,
       "invalid_spider_x": 303,
       "invalid_ws_path": 85,
-      "missing_fingerprint": 11328,
-      "missing_required_secret": 36906,
-      "missing_security": 14886,
-      "missing_sni": 3299,
+      "missing_fingerprint": 11055,
+      "missing_required_secret": 36340,
+      "missing_security": 14482,
+      "missing_sni": 3204,
       "response_too_large": 4,
-      "telegram_channel_reference": 8185,
-      "tunnel_error": 1548,
+      "telegram_channel_reference": 8344,
+      "tls_error": 920,
+      "tunnel_error": 7,
       "tunnel_timeout": 2,
-      "unknown_fingerprint": 81,
-      "unreachable_endpoint": 9603,
-      "unsupported_flow": 12,
-      "unsupported_transport": 3890
+      "unknown_fingerprint": 77,
+      "unreachable_endpoint": 7580,
+      "unsupported_flow": 10,
+      "unsupported_transport": 3603,
+      "upstream_status": 15
     },
     "fetched_sources": 67,
     "input_sources": 74,
-    "parsed_profiles": 130507,
-    "responsive_endpoints": 2060,
+    "parsed_profiles": 129579,
+    "responsive_endpoints": 3340,
     "source_freshness": {
       "failed": 7,
       "recent": 3,
       "unknown": 64
     },
-    "unique_profiles": 12613
+    "unique_profiles": 12576
   },
-  "generated_at": "2026-08-22T09:33:44Z",
+  "generated_at": "2026-08-22T12:30:58Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
+    "added": {
+      "hysteria2": 360,
+      "trojan": 270,
+      "vless": 2550
+    },
+    "cap_per_protocol": 10000,
+    "carried": {
+      "hysteria2": 0,
+      "trojan": 0,
+      "vless": 0
+    },
+    "cycle": {
+      "day": 1,
+      "days_until_reset": 6,
+      "reset_this_run": false,
+      "started_at": "2026-08-22T12:30:58Z"
+    },
+    "evicted": {
+      "hysteria2": 0,
+      "trojan": 0,
+      "vless": 0
+    },
+    "mode": "accumulate",
     "protocols": {
       "hysteria2": {
-        "new": 318,
-        "total": 318
+        "new": 360,
+        "total": 360
       },
       "trojan": {
-        "new": 246,
-        "total": 246
+        "new": 270,
+        "total": 270
       },
       "vless": {
-        "new": 895,
-        "total": 895
+        "new": 2550,
+        "total": 2550
       }
+    },
+    "refreshed": {
+      "hysteria2": 0,
+      "trojan": 0,
+      "vless": 0
+    },
+    "total": {
+      "hysteria2": 360,
+      "trojan": 270,
+      "vless": 2550
     }
+  },
+  "reachability": {
+    "attempts_per_endpoint": 3,
+    "checked": 9044,
+    "doh_resolved": 2,
+    "grades": {
+      "excellent": 1357,
+      "fair": 1,
+      "good": 1982
+    },
+    "latency_ms": {
+      "p50": 185,
+      "p95": 279
+    },
+    "responsive": 3340,
+    "stable_endpoints": 2978,
+    "stable_share_percent": 89.2,
+    "timeout_ms": 300
   },
   "sources": [
     {
@@ -67,7 +121,7 @@
     },
     {
       "freshness": "recent",
-      "last_modified": "2026-08-22T09:33:45+00:00",
+      "last_modified": "2026-08-22T12:18:20+00:00",
       "reason": null
     },
     {
@@ -182,7 +236,7 @@
     },
     {
       "freshness": "recent",
-      "last_modified": "2026-08-22T09:33:45+00:00",
+      "last_modified": "2026-08-22T12:30:59+00:00",
       "reason": null
     },
     {
@@ -432,30 +486,38 @@
     }
   ],
   "speed_test": {
-    "failed": 3010,
+    "avg_stability": 0.743,
+    "failed": 4995,
+    "grades": {
+      "D": 1
+    },
+    "median_kbps": 222.6,
     "min_kbps": 200.0,
     "mode": "best_effort",
-    "passed": 0,
-    "tested": 3010,
-    "unsupported_kept": 1459
+    "p90_kbps": 222.6,
+    "passed": 1,
+    "tested": 4996,
+    "unsupported_kept": 3179,
+    "warmup_seconds": 0.75,
+    "windows": 4
   },
   "strict_first_seen": false,
   "telegram": {
-    "approved_channels": 100,
-    "deep_accepted_profiles": 2695,
-    "discovered_channels": 346,
-    "reevaluated_channels": 0,
-    "static_accepted_profiles": 2695,
-    "unique_profiles": 2499,
-    "uri_candidates": 13044
+    "approved_channels": 105,
+    "deep_accepted_profiles": 2801,
+    "discovered_channels": 341,
+    "reevaluated_channels": 5,
+    "static_accepted_profiles": 2801,
+    "unique_profiles": 2602,
+    "uri_candidates": 13812
   },
   "timing_ms": {
-    "deduplication": 469,
-    "publication": 207,
-    "reachability": 47281,
-    "sources_fetch": 177794,
-    "speed_test": 90418,
-    "static_filter": 13893,
-    "total": 336041
+    "deduplication": 618,
+    "publication": 434,
+    "reachability": 208544,
+    "sources_fetch": 215684,
+    "speed_test": 172633,
+    "static_filter": 17101,
+    "total": 622987
   }
 }
