@@ -1,11 +1,15 @@
-"""Tunnel throughput measurement for proxy profiles.
+"""Deep tunnel throughput measurement for proxy profiles.
 
 The probe speaks the minimal client side of VLESS and Trojan, relays to a public
-bulk-download endpoint through the profile's own tunnel, and reports how many
-kilobytes per second the endpoint actually delivered. Protocol combinations that
-require a dedicated client core (Hysteria2 over QUIC, VLESS over Reality or
-gRPC) are reported as ``speed_unsupported`` so callers can apply their own
-policy instead of guessing.
+bulk-download endpoint through the profile's own tunnel, and analyses the
+transfer instead of taking a single noisy sample: an initial warm-up window
+absorbs TCP slow-start, then the measurement window is split into several
+sub-windows whose per-window speeds yield the mean, peak, jitter and a
+stability ratio. A composite quality score (0-100) combines speed, stability
+and the endpoint latency measured by the reachability stage, and maps to
+letter grades A-D. Protocol combinations that require a dedicated client core
+(Hysteria2 over QUIC, VLESS over Reality or gRPC) are reported as
+``speed_unsupported`` so callers can apply their own policy instead of guessing.
 """
 
 from __future__ import annotations
@@ -16,10 +20,12 @@ import contextlib
 import hashlib
 import ipaddress
 import os
+import socket
 import ssl
+import statistics
 import struct
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from time import perf_counter
 from urllib.parse import urlsplit
@@ -33,14 +39,74 @@ _WS_CLOSE = 0x8
 _WS_PING = 0x9
 _WS_PONG = 0xA
 
+_SPEED_WEIGHT = 0.6
+_STABILITY_WEIGHT = 0.25
+_LATENCY_WEIGHT = 0.15
+_NEUTRAL_LATENCY_COMPONENT = 60.0
+
+GRADE_A = "A"
+GRADE_B = "B"
+GRADE_C = "C"
+GRADE_D = "D"
+
+
+class _HandshakeError(ConnectionError):
+    """The proxy server rejected or truncated a protocol handshake."""
+
+
+class _UpstreamError(ConnectionError):
+    """The bulk endpoint behind the tunnel answered unexpectedly."""
+
 
 @dataclass(frozen=True, slots=True)
 class SpeedOutcome:
-    """Result of one throughput measurement."""
+    """Result of one deep throughput measurement.
+
+    ``passed``/``kbps``/``reason`` keep their historical positional order;
+    the remaining fields carry the windowed analysis.
+    """
 
     passed: bool
     kbps: float | None = None
     reason: str | None = None
+    kbps_peak: float | None = None
+    window_kbps: tuple[float, ...] = ()
+    jitter_kbps: float | None = None
+    stability: float | None = None
+    score: float | None = None
+    grade: str = ""
+
+
+def quality_score(
+    mean_kbps: float | None,
+    stability: float | None,
+    latency_component: float | None,
+    *,
+    target_kbps: float,
+) -> tuple[float, str]:
+    """Combine speed, stability and a latency component into a 0-100 score and grade.
+
+    ``latency_component`` is a 0-100 value produced by the reachability stage;
+    ``None`` scores neutral so profiles without a probe are not punished.
+    """
+    speed_component = 0.0 if mean_kbps is None else min(mean_kbps / target_kbps, 1.0) * 100.0
+    stability_component = (min(max(stability, 0.0), 1.0) if stability is not None else 0.0) * 100.0
+    effective_latency = (
+        _NEUTRAL_LATENCY_COMPONENT if latency_component is None else min(latency_component, 100.0)
+    )
+    score = round(
+        _SPEED_WEIGHT * speed_component
+        + _STABILITY_WEIGHT * stability_component
+        + _LATENCY_WEIGHT * effective_latency,
+        1,
+    )
+    if score >= 80.0:
+        return score, GRADE_A
+    if score >= 60.0:
+        return score, GRADE_B
+    if score >= 40.0:
+        return score, GRADE_C
+    return score, GRADE_D
 
 
 def tunnel_supported(profile: Profile) -> bool:
@@ -216,7 +282,7 @@ async def _websocket_upgrade(
     while True:
         line = await reader.readline()
         if not line:
-            raise ConnectionError("websocket upgrade failed")
+            raise _HandshakeError("websocket upgrade failed")
         if line in {b"\r\n", b"\n"}:
             break
 
@@ -242,15 +308,15 @@ async def _open_relay(profile: Profile, settings: SpeedTestConfig) -> tuple[_Rel
             while len(header) < 2:
                 chunk = await relay.receive()
                 if not chunk:
-                    raise ConnectionError("vless handshake rejected")
+                    raise _HandshakeError("vless handshake rejected")
                 header += chunk
             if header[0] != 0x00:
-                raise ConnectionError("vless handshake rejected")
+                raise _HandshakeError("vless handshake rejected")
             needed = 2 + header[1]
             while len(header) < needed:
                 chunk = await relay.receive()
                 if not chunk:
-                    raise ConnectionError("vless handshake truncated")
+                    raise _HandshakeError("vless handshake truncated")
                 header += chunk
             relay.push_back(header[needed:])
         else:
@@ -280,20 +346,38 @@ def _http_request(parts: urlsplit) -> bytes:
     ).encode()
 
 
-async def measure_profile(profile: Profile, settings: SpeedTestConfig) -> SpeedOutcome:
-    """Download through the profile's tunnel and rate the achieved speed."""
+async def measure_profile(
+    profile: Profile,
+    settings: SpeedTestConfig,
+    latency_component: float | None = None,
+) -> SpeedOutcome:
+    """Download through the profile's tunnel and rate the achieved quality."""
     try:
         return await asyncio.wait_for(
-            _measure_through_tunnel(profile, settings),
+            _measure_through_tunnel(profile, settings, latency_component),
             timeout=settings.max_duration_seconds + settings.timeout_seconds,
         )
     except TimeoutError:
         return SpeedOutcome(False, reason="tunnel_timeout")
+    except socket.gaierror:
+        return SpeedOutcome(False, reason="dns_error")
+    except ConnectionRefusedError:
+        return SpeedOutcome(False, reason="connection_refused")
+    except ssl.SSLError:
+        return SpeedOutcome(False, reason="tls_error")
+    except _HandshakeError:
+        return SpeedOutcome(False, reason="handshake_rejected")
+    except _UpstreamError:
+        return SpeedOutcome(False, reason="upstream_status")
     except (OSError, ValueError):
         return SpeedOutcome(False, reason="tunnel_error")
 
 
-async def _measure_through_tunnel(profile: Profile, settings: SpeedTestConfig) -> SpeedOutcome:
+async def _measure_through_tunnel(
+    profile: Profile,
+    settings: SpeedTestConfig,
+    latency_component: float | None,
+) -> SpeedOutcome:
     parts = urlsplit(settings.download_url)
     relay, _, _ = await _open_relay(profile, settings)
     try:
@@ -302,17 +386,21 @@ async def _measure_through_tunnel(profile: Profile, settings: SpeedTestConfig) -
         while b"\r\n\r\n" not in header:
             chunk = await relay.receive()
             if not chunk:
-                raise ConnectionError("empty response from bulk endpoint")
+                raise _UpstreamError("empty response from bulk endpoint")
             header += chunk
         head, _, body = header.partition(b"\r\n\r\n")
         status = head.split(b"\r\n", 1)[0].split()
         if len(status) < 2 or status[1] != b"200":
-            raise ConnectionError(f"unexpected status from bulk endpoint: {status!r}")
+            raise _UpstreamError(f"unexpected status from bulk endpoint: {status!r}")
         relay.push_back(body)
-        received = 0
-        started_at = perf_counter()
-        while received < settings.download_bytes:
-            budget = settings.max_duration_seconds - (perf_counter() - started_at)
+
+        received_total = 0
+        # Warm-up: absorb TCP slow-start so it cannot depress the first window.
+        warmup_seconds = min(max(settings.warmup_seconds, 0.0), settings.max_duration_seconds)
+        warmup_started_at = perf_counter()
+        warmup_bytes = 0
+        while warmup_seconds > 0 and received_total < settings.download_bytes:
+            budget = warmup_seconds - (perf_counter() - warmup_started_at)
             if budget <= 0:
                 break
             try:
@@ -321,23 +409,101 @@ async def _measure_through_tunnel(profile: Profile, settings: SpeedTestConfig) -
                 break
             if not chunk:
                 break
-            received += len(chunk)
-        elapsed = max(perf_counter() - started_at, 1e-6)
-        kbps = received / 1024 / elapsed
-        if received >= _EVIDENCE_BYTES and kbps >= settings.min_kbps:
-            return SpeedOutcome(True, kbps=round(kbps, 1))
-        if kbps >= settings.min_kbps:
-            return SpeedOutcome(False, kbps=round(kbps, 1), reason="insufficient_data")
-        return SpeedOutcome(False, kbps=round(kbps, 1), reason="slow_endpoint")
+            received_total += len(chunk)
+            warmup_bytes += len(chunk)
+        warmup_elapsed = perf_counter() - warmup_started_at
+
+        # Measurement: split the remaining budget into equal analysis windows.
+        windows = max(settings.windows, 1)
+        window_duration = settings.max_duration_seconds / windows
+        window_speeds: list[float] = []
+        measured_seconds = 0.0
+        measured_bytes = 0
+        drained = False
+        for _ in range(windows):
+            window_started_at = perf_counter()
+            window_bytes = 0
+            while received_total < settings.download_bytes:
+                budget = window_duration - (perf_counter() - window_started_at)
+                if budget <= 0:
+                    break
+                try:
+                    chunk = await asyncio.wait_for(relay.receive(), timeout=budget)
+                except TimeoutError:
+                    break
+                if not chunk:
+                    drained = True
+                    break
+                window_bytes += len(chunk)
+                received_total += len(chunk)
+            elapsed = perf_counter() - window_started_at
+            measured_seconds += elapsed
+            measured_bytes += window_bytes
+            window_speeds.append(window_bytes / 1024 / max(elapsed, 1e-6))
+            if drained or received_total >= settings.download_bytes:
+                break
+
+        if measured_bytes == 0 and warmup_bytes > 0:
+            # The transfer finished inside the warm-up window (small payload on a
+            # fast tunnel): those bytes are real delivered throughput, so they
+            # become the single measurement sample instead of a zero reading.
+            window_speeds = [warmup_bytes / 1024 / max(warmup_elapsed, 1e-6)]
+            measured_bytes = warmup_bytes
+            measured_seconds = warmup_elapsed
+        mean_kbps = measured_bytes / 1024 / max(measured_seconds, 1e-6)
+        peak_kbps = max(window_speeds, default=0.0)
+        if len(window_speeds) >= 2:
+            jitter = statistics.pstdev(window_speeds)
+            stability = min(min(window_speeds) / mean_kbps, 1.0) if mean_kbps > 0 else 0.0
+        else:
+            jitter = None
+            stability = 1.0
+        score, grade = quality_score(
+            mean_kbps,
+            stability,
+            latency_component,
+            target_kbps=settings.target_kbps,
+        )
+        rounded_mean = round(mean_kbps, 1)
+        windows_payload = tuple(round(value, 1) for value in window_speeds)
+        rounded_jitter = round(jitter, 1) if jitter is not None else None
+
+        def outcome(passed: bool, reason: str | None) -> SpeedOutcome:
+            return SpeedOutcome(
+                passed,
+                rounded_mean,
+                reason,
+                round(peak_kbps, 1),
+                windows_payload,
+                rounded_jitter,
+                round(stability, 3),
+                score,
+                grade,
+            )
+
+        if mean_kbps < settings.min_kbps:
+            return outcome(False, "slow_endpoint")
+        if received_total < _EVIDENCE_BYTES:
+            return outcome(False, "insufficient_data")
+        if settings.min_stability > 0.0 and stability < settings.min_stability:
+            return outcome(False, "unstable_endpoint")
+        return outcome(True, None)
     finally:
         await relay.aclose()
 
 
 async def run_speed_tests(
-    profiles: Sequence[Profile], settings: SpeedTestConfig
+    profiles: Sequence[Profile],
+    settings: SpeedTestConfig,
+    latency_components: Mapping[int, float] | None = None,
 ) -> dict[int, SpeedOutcome]:
-    """Measure every profile concurrently in batches keyed by object identity."""
+    """Measure every profile concurrently in batches keyed by object identity.
+
+    ``latency_components`` optionally maps ``id(profile)`` to a 0-100 latency
+    component produced by the reachability stage; missing entries score neutral.
+    """
     outcomes: dict[int, SpeedOutcome] = {}
+    shared_components = latency_components or {}
     semaphore = asyncio.Semaphore(settings.workers)
 
     async def measure_one(profile: Profile) -> None:
@@ -345,7 +511,10 @@ async def run_speed_tests(
             outcomes[id(profile)] = SpeedOutcome(False, reason="speed_unsupported")
             return
         async with semaphore:
-            outcomes[id(profile)] = await measure_profile(profile, settings)
+            outcome = await measure_profile(
+                profile, settings, shared_components.get(id(profile))
+            )
+            outcomes[id(profile)] = outcome
 
     for start in range(0, len(profiles), settings.batch_size):
         batch: Iterable[Profile] = profiles[start : start + settings.batch_size]

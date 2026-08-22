@@ -208,10 +208,10 @@ def test_fast_but_short_response_is_insufficient_data() -> None:
     assert outcome.reason == "insufficient_data"
 
 
-def test_refusing_connection_maps_to_tunnel_error() -> None:
+def test_refusing_connection_maps_to_dedicated_reason() -> None:
     outcome = asyncio.run(measure_profile(_profile(TROJAN_URI.format(port=1)), _settings()))
     assert outcome.passed is False
-    assert outcome.reason == "tunnel_error"
+    assert outcome.reason == "connection_refused"
 
 
 def test_run_speed_tests_marks_unsupported_profiles() -> None:
@@ -225,14 +225,14 @@ def test_run_speed_tests_marks_unsupported_profiles() -> None:
 
     outcomes = asyncio.run(exercise())
     assert outcomes[id(profiles[0])].reason == "speed_unsupported"
-    assert outcomes[id(profiles[1])].reason == "tunnel_error"
+    assert outcomes[id(profiles[1])].reason == "connection_refused"
 
 
 @pytest.mark.parametrize("mode,expected_kept", [("strict", 0), ("best_effort", 1)])
 def test_pipeline_gating_respects_mode(
     tmp_path, monkeypatch, config_for, mode: str, expected_kept: int
 ) -> None:
-    async def fake_speed_tests(profiles, settings):
+    async def fake_speed_tests(profiles, settings, latency_components=None):
         return {
             id(profile): SpeedOutcome(False, reason="speed_unsupported") for profile in profiles
         }
@@ -256,3 +256,91 @@ def test_pipeline_gating_respects_mode(
     published = tmp_path / "output" / "trojan.txt"
     kept = len(published.read_text(encoding="utf-8").splitlines()) if published.exists() else 0
     assert kept == expected_kept
+def test_fast_stream_reports_windowed_quality_metrics() -> None:
+    """A healthy transfer exposes windows, stability, score and a letter grade."""
+
+    async def exercise() -> SpeedOutcome:
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            await _read_until_http_end(reader)
+            writer.write(_http_response(b"z" * 400_000))
+            await writer.drain()
+            writer.close()
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            return await measure_profile(
+                _profile(TROJAN_URI.format(port=port)),
+                _settings(warmup_seconds=0.1),
+                latency_component=100.0,
+            )
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    outcome = asyncio.run(exercise())
+    assert outcome.passed is True
+    assert outcome.kbps is not None and outcome.kbps > 0
+    assert outcome.window_kbps
+    assert 0.0 <= (outcome.stability or 0.0) <= 1.0
+    assert outcome.score is not None and 0.0 <= outcome.score <= 100.0
+    assert outcome.grade in {"A", "B", "C", "D"}
+    assert outcome.reason is None
+
+
+def test_higher_latency_component_lowers_score() -> None:
+    """The composite score must react to the reachability latency component."""
+
+    async def measure(component: float) -> SpeedOutcome:
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            await _read_until_http_end(reader)
+            writer.write(_http_response(b"z" * 400_000))
+            await writer.drain()
+            writer.close()
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            return await measure_profile(
+                _profile(TROJAN_URI.format(port=port)),
+                _settings(warmup_seconds=0.1),
+                component,
+            )
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    fast_latency = asyncio.run(measure(100.0))
+    slow_latency = asyncio.run(measure(40.0))
+    assert fast_latency.score is not None and slow_latency.score is not None
+    assert fast_latency.score > slow_latency.score
+
+
+def test_connection_refused_maps_to_dedicated_reason() -> None:
+    outcome = asyncio.run(measure_profile(_profile(TROJAN_URI.format(port=1)), _settings()))
+    assert outcome.passed is False
+    assert outcome.reason == "connection_refused"
+
+
+def test_unresolvable_host_maps_to_dns_reason() -> None:
+    profile = _profile(
+        "trojan://strong-password@nonexistent-host.invalid:443?security=none&type=tcp#dns-check"
+    )
+    outcome = asyncio.run(measure_profile(profile, _settings(timeout_seconds=2.0)))
+    assert outcome.passed is False
+    assert outcome.reason == "dns_error"
+
+
+def test_run_speed_tests_accepts_latency_components() -> None:
+    """The batch runner threads per-profile latency components into scoring."""
+    profiles = [_profile(SOURCE_URI), _profile(SOURCE_URI.replace("node", "node2"))]
+
+    async def exercise() -> dict[int, SpeedOutcome]:
+        return await run_speed_tests(
+            profiles,
+            _settings(),
+            {id(profiles[0]): 100.0, id(profiles[1]): 40.0},
+        )
+
+    outcomes = asyncio.run(exercise())
+    assert set(outcomes) == {id(profile) for profile in profiles}

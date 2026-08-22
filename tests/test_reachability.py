@@ -209,3 +209,102 @@ def test_timeout_above_300_ms_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="от 1 до 300"):
         load_config(config_path)
+def _scripted_attempts(*outcomes: object):
+    """Build an ``_attempt_once`` replacement replaying a scripted sequence."""
+    calls: list[float] = []
+    sleeps: list[float] = []
+
+    async def fake(endpoint, timeout, dns_fallback_client=None):
+        index = len(calls)
+        calls.append(timeout)
+        return outcomes[min(index, len(outcomes) - 1)]
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    return fake, fake_sleep, calls, sleeps
+
+
+def test_probe_endpoint_aggregates_multiple_attempts(monkeypatch) -> None:
+    """Median latency, best liveness method and stability come from all attempts."""
+    from subscription_collector.reachability import (
+        Endpoint,
+        EndpointProbe,
+        _AttemptOutcome,
+        probe_endpoint,
+    )
+
+    fake_attempt, fake_sleep, calls, sleeps = _scripted_attempts(
+        _AttemptOutcome(False),
+        _AttemptOutcome(True, "cloudflare_trace", 120),
+        _AttemptOutcome(True, "tcp", 200),
+    )
+    monkeypatch.setattr("subscription_collector.reachability._attempt_once", fake_attempt)
+    monkeypatch.setattr("subscription_collector.reachability.asyncio.sleep", fake_sleep)
+
+    probe = asyncio.run(
+        probe_endpoint(Endpoint("host.example", 443, False, ""), 0.3, attempts=3,
+                       retry_delay_seconds=0.2)
+    )
+
+    assert isinstance(probe, EndpointProbe)
+    assert probe.responded is True
+    assert probe.attempts_made == 3
+    assert probe.successful_attempts == 2
+    assert probe.latencies_ms == (120, 200)
+    assert probe.latency_ms == 160
+    assert probe.method == "cloudflare_trace"
+    assert probe.stable is False
+    assert probe.resolution == "system"
+    assert len(calls) == 3
+    assert sleeps == [0.2, 0.2]
+
+
+def test_probe_endpoint_stable_when_every_attempt_responds(monkeypatch) -> None:
+    from subscription_collector.reachability import (
+        Endpoint,
+        _AttemptOutcome,
+        probe_endpoint,
+    )
+
+    fake_attempt, _, _, _ = _scripted_attempts(_AttemptOutcome(True, "tcp", 90))
+    monkeypatch.setattr("subscription_collector.reachability._attempt_once", fake_attempt)
+
+    probe = asyncio.run(probe_endpoint(Endpoint("host.example", 80, False, ""), 0.3, attempts=3))
+
+    assert probe.stable is True
+    assert probe.successful_attempts == 3
+    assert probe.latency_ms == 90
+
+
+def test_probe_endpoint_reports_doh_resolution_path(monkeypatch) -> None:
+    from subscription_collector.reachability import (
+        Endpoint,
+        _AttemptOutcome,
+        probe_endpoint,
+    )
+
+    fake_attempt, _, _, _ = _scripted_attempts(
+        _AttemptOutcome(False), _AttemptOutcome(True, "tcp", 50, resolution="doh")
+    )
+    monkeypatch.setattr("subscription_collector.reachability._attempt_once", fake_attempt)
+
+    probe = asyncio.run(probe_endpoint(Endpoint("host.example", 80, False, ""), 0.3, attempts=2))
+
+    assert probe.resolution == "doh"
+    assert probe.responded is True
+
+
+def test_latency_grade_thresholds() -> None:
+    from subscription_collector.reachability import (
+        GRADE_EXCELLENT,
+        GRADE_FAIR,
+        GRADE_GOOD,
+        GRADE_UNRESPONSIVE,
+        latency_grade,
+    )
+
+    assert latency_grade(None, 150, 300) == GRADE_UNRESPONSIVE
+    assert latency_grade(150, 150, 300) == GRADE_EXCELLENT
+    assert latency_grade(299, 150, 300) == GRADE_GOOD
+    assert latency_grade(301, 150, 300) == GRADE_FAIR

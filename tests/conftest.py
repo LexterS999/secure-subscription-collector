@@ -38,7 +38,7 @@ def responsive_endpoints(monkeypatch: pytest.MonkeyPatch):
 def fast_speed_tests(monkeypatch: pytest.MonkeyPatch):
     """Keep pipeline tests offline: every measured profile pretends to be fast."""
 
-    async def fake_speed_tests(profiles, settings):
+    async def fake_speed_tests(profiles, settings, latency_components=None):
         return {id(profile): SpeedOutcome(True, kbps=9999.0) for profile in profiles}
 
     monkeypatch.setattr(cli, "run_speed_tests", fake_speed_tests)
@@ -68,6 +68,7 @@ def config_for(tmp_path: Path):
                 tg_channels_path=tg_channels_path or tmp_path / "tg_channels.txt",
                 telegram_state_path=telegram_state_path or tmp_path / "channel_state.json",
                 telegram_registry_path=telegram_registry_path or tmp_path / "tg_registry.txt",
+                profile_pool_path=tmp_path / "profile_pool.json",
             ),
         )
 

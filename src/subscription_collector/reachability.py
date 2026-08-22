@@ -1,11 +1,16 @@
-"""TCP reachability checks for profile servers.
+"""Deep TCP reachability checks for profile servers.
 
 Every unique endpoint behind the collected profiles is probed over TCP with a
-one-second deadline. Once the connection is established, the probe tries to
-confirm application-level liveness by requesting the Cloudflare trace endpoint
+per-attempt deadline. A probe is no longer a single shot: each endpoint is
+attempted ``attempts`` times (default three) with a short retry delay, and the
+results are aggregated into a median handshake latency, a success ratio and a
+stability verdict. Once a connection is established, the probe confirms
+application-level liveness by requesting the Cloudflare trace endpoint
 (``/cdn-cgi/trace``) and falls back to the Google-style ``/generate_204``
-connectivity path. Domains that cannot be resolved by the system resolver get
-one fallback attempt through the Google DNS-over-HTTPS service.
+connectivity path. Successful TLS handshakes additionally record the negotiated
+TLS version and cipher for deeper endpoint analytics. Domains that cannot be
+resolved by the system resolver get one fallback attempt through the Google
+DNS-over-HTTPS service, and the resolution path is reported.
 
 Hysteria2 endpoints are exempt: the protocol runs over QUIC/UDP, so a TCP
 handshake cannot prove or disprove availability and would reject healthy
@@ -18,6 +23,7 @@ import asyncio
 import ipaddress
 import socket
 import ssl
+import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -30,6 +36,13 @@ _TRACE_PATH = "/cdn-cgi/trace"
 _FALLBACK_PATH = "/generate_204"
 _DOH_ENDPOINT = "https://dns.google/resolve"
 _PROBE_USER_AGENT = "secure-subscription-collector/0.1"
+
+_METHOD_RANK = {"tcp": 0, "google_generate_204": 1, "cloudflare_trace": 2}
+
+GRADE_EXCELLENT = "excellent"
+GRADE_GOOD = "good"
+GRADE_FAIR = "fair"
+GRADE_UNRESPONSIVE = "unresponsive"
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -44,7 +57,11 @@ class Endpoint:
 
 @dataclass(frozen=True, slots=True)
 class EndpointProbe:
-    """Redacted outcome of one reachability attempt with handshake latency."""
+    """Redacted outcome of one deep reachability check.
+
+    The first seven fields keep their historical positional order; the rest are
+    aggregation results across attempts.
+    """
 
     host: str
     port: int
@@ -53,6 +70,24 @@ class EndpointProbe:
     responded: bool
     method: str
     latency_ms: int | None = None
+    attempts_made: int = 0
+    successful_attempts: int = 0
+    latencies_ms: tuple[int, ...] = ()
+    stable: bool = False
+    resolution: str = "system"
+    tls_version: str | None = None
+    tls_cipher: str | None = None
+
+
+def latency_grade(latency_ms: int | None, excellent_ms: int, good_ms: int) -> str:
+    """Grade an aggregated handshake latency against the configured thresholds."""
+    if latency_ms is None:
+        return GRADE_UNRESPONSIVE
+    if latency_ms <= excellent_ms:
+        return GRADE_EXCELLENT
+    if latency_ms <= good_ms:
+        return GRADE_GOOD
+    return GRADE_FAIR
 
 
 def _is_ip_literal(value: str) -> bool:
@@ -111,6 +146,18 @@ async def _resolve_via_doh(
     return None
 
 
+def _tls_metadata(writer: asyncio.StreamWriter) -> tuple[str | None, str | None]:
+    """Best-effort negotiated TLS version and cipher from an open connection."""
+    try:
+        ssl_object = writer.get_extra_info("ssl_object")
+        if ssl_object is None:
+            return None, None
+        cipher = ssl_object.cipher()
+        return ssl_object.version(), cipher[0] if cipher else None
+    except (OSError, ValueError, AttributeError):
+        return None, None
+
+
 async def _http_round_trip(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -136,17 +183,28 @@ async def _http_round_trip(
     return bool(data)
 
 
-async def probe_endpoint(
+@dataclass(frozen=True, slots=True)
+class _AttemptOutcome:
+    responded: bool
+    method: str = "tcp"
+    latency_ms: int | None = None
+    resolution: str = "system"
+    tls_version: str | None = None
+    tls_cipher: str | None = None
+
+
+async def _attempt_once(
     endpoint: Endpoint,
     timeout: float,
     dns_fallback_client: httpx.AsyncClient | None = None,
-) -> EndpointProbe:
-    """Probe one endpoint over TCP/TLS and confirm liveness within the deadline."""
+) -> _AttemptOutcome:
+    """One full attempt: connect (with DoH fallback), then confirm liveness."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     context = _ssl_context(endpoint)
     server_name = _sni_hostname(endpoint)
     handshake_started = loop.time()
+    resolution = "system"
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(
@@ -158,15 +216,10 @@ async def probe_endpoint(
         resolved = None
         if dns_fallback_client is not None and not _is_ip_literal(endpoint.host):
             resolved = await _resolve_via_doh(endpoint, dns_fallback_client)
+            if resolved is not None:
+                resolution = "doh"
         if resolved is None:
-            return EndpointProbe(
-                endpoint.host,
-                endpoint.port,
-                endpoint.use_tls,
-                endpoint.server_name,
-                False,
-                "tcp",
-            )
+            return _AttemptOutcome(False)
         remaining = max(0.0, deadline - loop.time())
         try:
             reader, writer = await asyncio.wait_for(
@@ -176,19 +229,12 @@ async def probe_endpoint(
                 remaining,
             )
         except (TimeoutError, OSError, ssl.SSLError):
-            return EndpointProbe(
-                endpoint.host,
-                endpoint.port,
-                endpoint.use_tls,
-                endpoint.server_name,
-                False,
-                "tcp",
-            )
+            return _AttemptOutcome(False, resolution=resolution)
     except (TimeoutError, OSError, ssl.SSLError):
-        return EndpointProbe(
-            endpoint.host, endpoint.port, endpoint.use_tls, endpoint.server_name, False, "tcp"
-        )
+        return _AttemptOutcome(False)
+
     latency_ms = round((loop.time() - handshake_started) * 1000)
+    tls_version, tls_cipher = _tls_metadata(writer)
 
     method = "tcp"
     for path, label in (
@@ -202,15 +248,61 @@ async def probe_endpoint(
             method = label
             break
     writer.close()
+    return _AttemptOutcome(True, method, latency_ms, resolution, tls_version, tls_cipher)
+
+
+def _aggregate(
+    endpoint: Endpoint, outcomes: Sequence[_AttemptOutcome]
+) -> EndpointProbe:
+    """Fold per-attempt outcomes into one redacted aggregate probe result."""
+    latencies = tuple(
+        outcome.latency_ms
+        for outcome in outcomes
+        if outcome.responded and outcome.latency_ms is not None
+    )
+    responded_outcomes = [outcome for outcome in outcomes if outcome.responded]
+    best_method = "tcp"
+    for outcome in responded_outcomes:
+        if _METHOD_RANK.get(outcome.method, 0) > _METHOD_RANK.get(best_method, 0):
+            best_method = outcome.method
+    resolutions = [outcome.resolution for outcome in outcomes]
+    resolution = "doh" if "doh" in resolutions else "system"
+    tls_versions = {outcome.tls_version for outcome in responded_outcomes if outcome.tls_version}
+    tls_ciphers = {outcome.tls_cipher for outcome in responded_outcomes if outcome.tls_cipher}
+    median_latency = round(statistics.median(latencies)) if latencies else None
     return EndpointProbe(
         endpoint.host,
         endpoint.port,
         endpoint.use_tls,
         endpoint.server_name,
-        True,
-        method,
-        latency_ms,
+        responded=bool(responded_outcomes),
+        method=best_method,
+        latency_ms=median_latency,
+        attempts_made=len(outcomes),
+        successful_attempts=len(responded_outcomes),
+        latencies_ms=latencies,
+        stable=len(responded_outcomes) == len(outcomes),
+        resolution=resolution,
+        tls_version=tls_versions.pop() if len(tls_versions) == 1 else None,
+        tls_cipher=tls_ciphers.pop() if len(tls_ciphers) == 1 else None,
     )
+
+
+async def probe_endpoint(
+    endpoint: Endpoint,
+    timeout: float,
+    dns_fallback_client: httpx.AsyncClient | None = None,
+    *,
+    attempts: int = 1,
+    retry_delay_seconds: float = 0.0,
+) -> EndpointProbe:
+    """Probe one endpoint over TCP/TLS, retrying transient failures."""
+    outcomes: list[_AttemptOutcome] = []
+    for attempt in range(max(attempts, 1)):
+        if attempt:
+            await asyncio.sleep(retry_delay_seconds)
+        outcomes.append(await _attempt_once(endpoint, timeout, dns_fallback_client))
+    return _aggregate(endpoint, outcomes)
 
 
 async def probe_endpoints(
@@ -227,10 +319,17 @@ async def probe_endpoints(
         dns_fallback_client = httpx.AsyncClient(timeout=2.0)
     semaphore = asyncio.Semaphore(settings.workers)
     timeout = settings.timeout_ms / 1000
+    retry_delay_seconds = settings.retry_delay_ms / 1000
 
     async def guarded(item: Endpoint) -> tuple[Endpoint, EndpointProbe]:
         async with semaphore:
-            return item, await probe_endpoint(item, timeout, dns_fallback_client)
+            return item, await probe_endpoint(
+                item,
+                timeout,
+                dns_fallback_client,
+                attempts=settings.attempts,
+                retry_delay_seconds=retry_delay_seconds,
+            )
 
     try:
         for start in range(0, len(endpoints), settings.batch_size):

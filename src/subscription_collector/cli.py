@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import contextlib
 import logging
+import math
 import statistics
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +33,7 @@ from .channel_state import (
 from .config_loader import (
     CollectorConfig,
     ConfigError,
+    ReachabilityConfig,
     load_config,
     validate_config,
 )
@@ -43,7 +45,7 @@ from .models import Profile, RunStats, TelegramPost
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
-from .reachability import endpoint_of, probe_endpoints
+from .reachability import EndpointProbe, endpoint_of, latency_grade, probe_endpoints
 from .report import build_report
 from .speedtest import run_speed_tests
 from .state import update_state
@@ -89,6 +91,23 @@ def _stage_duration_ms(stats: RunStats, stage: str, started_at: float) -> int:
 
 def _duration_text(duration_ms: int) -> str:
     return f"{duration_ms / 1000:.2f} с"
+
+
+def _percentile(values: Sequence[float], fraction: float) -> float:
+    """Nearest-rank percentile over a sample; zero for an empty sample."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, math.ceil(fraction * len(ordered)) - 1))
+    return ordered[index]
+
+
+def _latency_component(probe: EndpointProbe, settings: ReachabilityConfig) -> float:
+    """Map an aggregated handshake latency to the 0-100 speed-score component."""
+    grade = latency_grade(
+        probe.latency_ms, settings.grade_excellent_ms, settings.grade_good_ms
+    )
+    return {"excellent": 100.0, "good": 70.0, "fair": 40.0}.get(grade, 40.0)
 
 
 async def _stage_watchdog(stage: str, started_at: float) -> None:
@@ -430,18 +449,48 @@ async def run_collection(
     for _ in range(discarded_profiles):
         stats.exclude("unreachable_endpoint")
     reachability_duration_ms = _stage_duration_ms(stats, "reachability", reachability_started_at)
-    latencies = [
+    median_latencies = [
         probe.latency_ms
         for probe in probes.values()
         if probe.responded and probe.latency_ms is not None
     ]
-    median_latency = round(statistics.median(latencies)) if latencies else 0
+    stable_endpoints = sum(1 for probe in probes.values() if probe.stable)
+    doh_resolved = sum(1 for probe in probes.values() if probe.resolution == "doh")
+    grade_counts: dict[str, int] = {}
+    for probe in probes.values():
+        if probe.responded:
+            grade = latency_grade(
+                probe.latency_ms,
+                config.reachability.grade_excellent_ms,
+                config.reachability.grade_good_ms,
+            )
+            grade_counts[grade] = grade_counts.get(grade, 0) + 1
+    latency_p50 = round(_percentile(median_latencies, 0.50))
+    latency_p95 = round(_percentile(median_latencies, 0.95))
+    stable_share = (
+        round(stable_endpoints / len(responsive) * 100, 1) if responsive else 0.0
+    )
+    reachability_summary: dict[str, object] = {
+        "checked": len(endpoints),
+        "responsive": len(responsive),
+        "attempts_per_endpoint": config.reachability.attempts,
+        "timeout_ms": config.reachability.timeout_ms,
+        "stable_endpoints": stable_endpoints,
+        "stable_share_percent": stable_share,
+        "doh_resolved": doh_resolved,
+        "latency_ms": {"p50": latency_p50, "p95": latency_p95},
+        "grades": dict(sorted(grade_counts.items())),
+    }
     logger.info(
-        "Этап «Проверка доступности»: завершён за %s — ответили конечных точек: %d "
-        "(медиана задержки: %d мс), отброшено профилей: %d.",
+        "Этап «Проверка доступности»: завершён за %s — ответили конечных точек: %d из %d "
+        "(p50: %d мс, p95: %d мс, стабильных: %.1f%%, через DoH: %d), отброшено профилей: %d.",
         _duration_text(reachability_duration_ms),
         len(responsive),
-        median_latency,
+        len(endpoints),
+        latency_p50,
+        latency_p95,
+        stable_share,
+        doh_resolved,
         discarded_profiles,
     )
 
@@ -458,7 +507,12 @@ async def run_collection(
             speed_settings.workers,
             speed_settings.mode,
         )
-        outcomes = await run_speed_tests(profiles, speed_settings)
+        latency_components = {
+            id(profile): _latency_component(probes[endpoint], config.reachability)
+            for profile in profiles
+            if (endpoint := endpoint_of(profile)) is not None and endpoint in probes
+        }
+        outcomes = await run_speed_tests(profiles, speed_settings, latency_components)
         measured_profiles = []
         for profile in profiles:
             outcome = outcomes[id(profile)]
@@ -478,6 +532,17 @@ async def run_collection(
             if outcomes[id(profile)].reason == "speed_unsupported"
         )
         speed_duration_ms = _stage_duration_ms(stats, "speed_test", speed_started_at)
+        passed_outcomes = [outcome for outcome in outcomes.values() if outcome.passed]
+        passed_kbps = [
+            outcome.kbps for outcome in passed_outcomes if outcome.kbps is not None
+        ]
+        stabilities = [
+            outcome.stability for outcome in passed_outcomes if outcome.stability is not None
+        ]
+        speed_grades: dict[str, int] = {}
+        for outcome in passed_outcomes:
+            grade_key = outcome.grade or "ungraded"
+            speed_grades[grade_key] = speed_grades.get(grade_key, 0) + 1
         speed_summary = {
             "tested": len(outcomes),
             "passed": passed_count,
@@ -485,6 +550,12 @@ async def run_collection(
             "unsupported_kept": unsupported_kept,
             "min_kbps": speed_settings.min_kbps,
             "mode": speed_settings.mode,
+            "median_kbps": round(statistics.median(passed_kbps), 1) if passed_kbps else 0.0,
+            "p90_kbps": round(_percentile(passed_kbps, 0.90), 1),
+            "avg_stability": round(statistics.mean(stabilities), 3) if stabilities else None,
+            "windows": speed_settings.windows,
+            "warmup_seconds": speed_settings.warmup_seconds,
+            "grades": dict(sorted(speed_grades.items())),
         }
         logger.info(
             "Этап «Проверка скорости»: завершён за %s — прошли: %d, не прошли: %d, "
@@ -576,10 +647,16 @@ async def run_collection(
         )
     )
     try:
-        publication = publish_profiles(paths.output_dir, profiles)
+        publication = publish_profiles(
+            paths.output_dir,
+            profiles,
+            pool_path=paths.profile_pool_path,
+            settings=config.publication,
+            now=started_at,
+        )
         stats.emitted_profiles = publication.new_profiles
-        stats.published_new_by_protocol = publication.new_by_protocol
-        stats.published_total_by_protocol = publication.total_by_protocol
+        stats.published_new_by_protocol = dict(publication.added_by_protocol)
+        stats.published_total_by_protocol = dict(publication.total_by_protocol)
         _stage_duration_ms(stats, "publication", publication_started_at)
         stats.timing_ms["total"] = round((perf_counter() - monotonic_started_at) * 1000)
         write_json_atomic(
@@ -608,6 +685,8 @@ async def run_collection(
                     ),
                 },
                 speed_test=speed_summary,
+                publication=publication.as_report_payload(),
+                reachability=reachability_summary,
             ),
         )
     except OSError:
@@ -617,8 +696,16 @@ async def run_collection(
         )
         raise
     logger.info(
-        "Этап «Публикация»: завершён — добавлено профилей: %d. Конвейер завершён за %s.",
+        "Этап «Публикация»: завершён за %s — добавлено: %d, перенесено: %d, обновлено: %d, "
+        "вытеснено: %d; цикл накопления: день %d, до сброса %d дн.%s Конвейер завершён за %s.",
+        _duration_text(stats.timing_ms["publication"]),
         publication.new_profiles,
+        sum(publication.carried_by_protocol.values()),
+        sum(publication.refreshed_by_protocol.values()),
+        sum(publication.evicted_by_protocol.values()),
+        publication.cycle_day,
+        publication.days_until_reset,
+        " Выполнен сброс цикла." if publication.reset_this_run else "",
         _duration_text(stats.timing_ms["total"]),
     )
     return 2 if behavior.fail_on_empty and publication.new_profiles == 0 else 0

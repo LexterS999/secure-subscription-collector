@@ -17,6 +17,8 @@ def build_report(
     strict_first_seen: bool,
     telegram: dict[str, object] | None = None,
     speed_test: dict[str, object] | None = None,
+    publication: dict[str, object] | None = None,
+    reachability: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a redacted audit record with aggregate source and publication outcomes."""
     source_rows = [
@@ -44,7 +46,8 @@ def build_report(
                     "total": stats.published_total_by_protocol.get(protocol, 0),
                 }
                 for protocol in _PROTOCOLS
-            }
+            },
+            **(publication or {}),
         },
         "counts": {
             "input_sources": stats.input_sources,
@@ -64,4 +67,6 @@ def build_report(
         report["telegram"] = telegram
     if speed_test is not None:
         report["speed_test"] = speed_test
+    if reachability is not None:
+        report["reachability"] = reachability
     return report

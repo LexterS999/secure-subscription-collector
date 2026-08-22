@@ -94,6 +94,10 @@ class ReachabilityConfig:
     workers: int = 56
     batch_size: int = 256
     timeout_ms: int = 300
+    attempts: int = 3
+    retry_delay_ms: int = 200
+    grade_excellent_ms: int = 150
+    grade_good_ms: int = 300
 
 
 @dataclass(frozen=True)
@@ -109,9 +113,21 @@ class SpeedTestConfig:
     workers: int = 56
     batch_size: int = 128
     download_url: str = "http://cachefly.cachefly.net/5mb.test"
+    warmup_seconds: float = 0.75
+    windows: int = 4
+    target_kbps: float = 2000.0
+    min_stability: float = 0.0
 
 
 @dataclass(frozen=True)
+class PublicationConfig:
+    """Accumulating publication cycle applied to the final protocol files."""
+
+    max_profiles_per_protocol: int = 10_000
+    cycle_days: int = 6
+
+
+@dataclass(frozen=True, slots=True)
 class PathsConfig:
     input_path: Path
     output_dir: Path
@@ -120,6 +136,7 @@ class PathsConfig:
     tg_channels_path: Path = Path("output/tg_channels.txt")
     telegram_state_path: Path = Path(".collector/channel_state.json")
     telegram_registry_path: Path = Path(".collector/tg_registry.txt")
+    profile_pool_path: Path = Path(".collector/profile_pool.json")
 
 
 @dataclass(frozen=True)
@@ -157,6 +174,7 @@ class CollectorConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     reachability: ReachabilityConfig = field(default_factory=ReachabilityConfig)
     speed_test: SpeedTestConfig = field(default_factory=SpeedTestConfig)
+    publication: PublicationConfig = field(default_factory=PublicationConfig)
 
 
 def _mapping(value: Any, location: str) -> dict[str, Any]:
@@ -268,7 +286,7 @@ def _https_url_value(value: Any, location: str) -> str:
     return value
 
 
-_PATHS_OPTIONAL_KEYS = {"tg_channels", "telegram_state", "telegram_registry"}
+_PATHS_OPTIONAL_KEYS = {"tg_channels", "telegram_state", "telegram_registry", "profile_pool"}
 _TELEGRAM_KEYS = {
     "max_post_age_hours",
     "max_profiles_per_channel",
@@ -291,7 +309,15 @@ _SOURCES_OPTIONAL_KEYS = {
     "retry_backoff_seconds",
 }
 _MAX_RETRIES = 5
-_REACHABILITY_KEYS = {"workers", "batch_size", "timeout_ms"}
+_REACHABILITY_KEYS = {
+    "workers",
+    "batch_size",
+    "timeout_ms",
+    "attempts",
+    "retry_delay_ms",
+    "grade_excellent_ms",
+    "grade_good_ms",
+}
 _CHANNEL_QUALITY_KEYS = {
     "approval_score",
     "min_evidence_runs",
@@ -341,6 +367,12 @@ def _paths_config(payload: dict[str, Any]) -> PathsConfig:
             _or_default(
                 _optional_string(section, "telegram_registry", "paths"),
                 ".collector/tg_registry.txt",
+            )
+        ),
+        profile_pool_path=Path(
+            _or_default(
+                _optional_string(section, "profile_pool", "paths"),
+                ".collector/profile_pool.json",
             )
         ),
     )
@@ -521,10 +553,30 @@ def _reachability_config(payload: Any) -> ReachabilityConfig:
     timeout_ms = _or_default(_optional_integer(section, "timeout_ms", "reachability", 1), 300)
     if timeout_ms > 300:
         raise ConfigError("reachability.timeout_ms должен быть целым числом от 1 до 300")
+    attempts = _or_default(_optional_integer(section, "attempts", "reachability", 1), 3)
+    if attempts > 5:
+        raise ConfigError("reachability.attempts должен быть целым числом от 1 до 5")
+    retry_delay_ms = _or_default(
+        _optional_integer(section, "retry_delay_ms", "reachability", 0), 200
+    )
+    if retry_delay_ms > 2000:
+        raise ConfigError("reachability.retry_delay_ms должен быть целым числом от 0 до 2000")
+    grade_excellent_ms = _or_default(
+        _optional_integer(section, "grade_excellent_ms", "reachability", 1), 150
+    )
+    grade_good_ms = _or_default(_optional_integer(section, "grade_good_ms", "reachability", 1), 300)
+    if grade_good_ms < grade_excellent_ms:
+        raise ConfigError(
+            "reachability.grade_good_ms должен быть не меньше reachability.grade_excellent_ms"
+        )
     return ReachabilityConfig(
         workers=workers,
         batch_size=_or_default(_optional_integer(section, "batch_size", "reachability", 1), 256),
         timeout_ms=timeout_ms,
+        attempts=attempts,
+        retry_delay_ms=retry_delay_ms,
+        grade_excellent_ms=grade_excellent_ms,
+        grade_good_ms=grade_good_ms,
     )
 
 
@@ -539,7 +591,12 @@ _SPEED_TEST_KEYS = {
     "workers",
     "batch_size",
     "download_url",
+    "warmup_seconds",
+    "windows",
+    "target_kbps",
+    "min_stability",
 }
+_PUBLICATION_KEYS = {"max_profiles_per_protocol", "cycle_days"}
 
 
 def _speed_test_config(payload: Any) -> SpeedTestConfig:
@@ -562,6 +619,22 @@ def _speed_test_config(payload: Any) -> SpeedTestConfig:
     workers = _or_default(_optional_integer(section, "workers", "speed_test", 1), 56)
     if not 50 <= workers <= 60:
         raise ConfigError("speed_test.workers должен быть целым числом от 50 до 60")
+    max_duration_seconds = _or_default(
+        _optional_number(section, "max_duration_seconds", "speed_test", 1.0), 8.0
+    )
+    warmup_seconds = _or_default(
+        _optional_number(section, "warmup_seconds", "speed_test", 0.0), 0.75
+    )
+    if warmup_seconds >= max_duration_seconds:
+        raise ConfigError(
+            "speed_test.warmup_seconds должен быть меньше speed_test.max_duration_seconds"
+        )
+    windows = _or_default(_optional_integer(section, "windows", "speed_test", 1), 4)
+    if windows > 8:
+        raise ConfigError("speed_test.windows должен быть целым числом от 1 до 8")
+    min_stability = _or_default(_optional_number(section, "min_stability", "speed_test", 0.0), 0.0)
+    if not 0.0 <= min_stability <= 1.0:
+        raise ConfigError("speed_test.min_stability должен быть числом от 0.0 до 1.0")
     return SpeedTestConfig(
         enabled=_or_default(_optional_boolean(section, "enabled", "speed_test"), True),
         mode=mode,
@@ -569,15 +642,40 @@ def _speed_test_config(payload: Any) -> SpeedTestConfig:
         download_bytes=_or_default(
             _optional_integer(section, "download_bytes", "speed_test", 262_144), 2_097_152
         ),
-        max_duration_seconds=_or_default(
-            _optional_number(section, "max_duration_seconds", "speed_test", 1.0), 8.0
-        ),
+        max_duration_seconds=max_duration_seconds,
         timeout_seconds=_or_default(
             _optional_number(section, "timeout_seconds", "speed_test", 1.0), 12.0
         ),
         workers=workers,
         batch_size=_or_default(_optional_integer(section, "batch_size", "speed_test", 1), 128),
         download_url=download_url,
+        warmup_seconds=warmup_seconds,
+        windows=windows,
+        target_kbps=_or_default(
+            _optional_number(section, "target_kbps", "speed_test", 100.0), 2000.0
+        ),
+        min_stability=min_stability,
+    )
+
+
+def _publication_config(payload: Any) -> PublicationConfig:
+    if payload is None:
+        return PublicationConfig()
+    section = _mapping(payload, "publication")
+    _check_keys(section, "publication", set(), _PUBLICATION_KEYS)
+    max_profiles = _or_default(
+        _optional_integer(section, "max_profiles_per_protocol", "publication", 1), 10_000
+    )
+    if max_profiles > 100_000:
+        raise ConfigError(
+            "publication.max_profiles_per_protocol должен быть целым числом от 1 до 100000"
+        )
+    cycle_days = _or_default(_optional_integer(section, "cycle_days", "publication", 1), 6)
+    if cycle_days > 365:
+        raise ConfigError("publication.cycle_days должен быть целым числом от 1 до 365")
+    return PublicationConfig(
+        max_profiles_per_protocol=max_profiles,
+        cycle_days=cycle_days,
     )
 
 
@@ -592,6 +690,7 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "tg_channels": str(config.paths.tg_channels_path),
             "telegram_state": str(config.paths.telegram_state_path),
             "telegram_registry": str(config.paths.telegram_registry_path),
+            "profile_pool": str(config.paths.profile_pool_path),
         },
         "sources": {
             "max_age_hours": config.sources.max_age_hours,
@@ -657,6 +756,14 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "workers": config.reachability.workers,
             "batch_size": config.reachability.batch_size,
             "timeout_ms": config.reachability.timeout_ms,
+            "attempts": config.reachability.attempts,
+            "retry_delay_ms": config.reachability.retry_delay_ms,
+            "grade_excellent_ms": config.reachability.grade_excellent_ms,
+            "grade_good_ms": config.reachability.grade_good_ms,
+        },
+        "publication": {
+            "max_profiles_per_protocol": config.publication.max_profiles_per_protocol,
+            "cycle_days": config.publication.cycle_days,
         },
         "speed_test": {
             "enabled": config.speed_test.enabled,
@@ -668,6 +775,10 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "workers": config.speed_test.workers,
             "batch_size": config.speed_test.batch_size,
             "download_url": config.speed_test.download_url,
+            "warmup_seconds": config.speed_test.warmup_seconds,
+            "windows": config.speed_test.windows,
+            "target_kbps": config.speed_test.target_kbps,
+            "min_stability": config.speed_test.min_stability,
         },
     }
     _paths_config(payload)
@@ -677,6 +788,7 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
     _telegram_config(payload["telegram"])
     _reachability_config(payload["reachability"])
     _speed_test_config(payload["speed_test"])
+    _publication_config(payload["publication"])
     return config
 
 
@@ -694,7 +806,7 @@ def load_config(path: Path | str) -> CollectorConfig:
         root,
         "Корень config.yaml",
         {"paths", "sources", "static_filter", "behavior"},
-        {"telegram", "reachability", "speed_test"},
+        {"telegram", "reachability", "speed_test", "publication"},
     )
     return validate_config(
         CollectorConfig(
@@ -705,5 +817,6 @@ def load_config(path: Path | str) -> CollectorConfig:
             telegram=_telegram_config(root.get("telegram")),
             reachability=_reachability_config(root.get("reachability")),
             speed_test=_speed_test_config(root.get("speed_test")),
+            publication=_publication_config(root.get("publication")),
         )
     )
