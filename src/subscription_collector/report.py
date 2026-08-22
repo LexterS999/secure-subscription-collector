@@ -16,6 +16,7 @@ def build_report(
     max_age_hours: int,
     strict_first_seen: bool,
     telegram: dict[str, object] | None = None,
+    speed_test: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a redacted audit record with aggregate source and publication outcomes."""
     source_rows = [
@@ -61,4 +62,6 @@ def build_report(
     }
     if telegram is not None:
         report["telegram"] = telegram
+    if speed_test is not None:
+        report["speed_test"] = speed_test
     return report

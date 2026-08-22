@@ -44,6 +44,7 @@ from .parser import parse_profile
 from .policy import evaluate_strict_secure
 from .reachability import endpoint_of, probe_endpoints
 from .report import build_report
+from .speedtest import run_speed_tests
 from .state import update_state
 from .telegram import (
     canonical_preview_url,
@@ -395,6 +396,58 @@ async def run_collection(
         discarded_profiles,
     )
 
+    speed_settings = config.speed_test
+    speed_summary: dict[str, object] | None = None
+    profiles = reachable_profiles
+    if speed_settings.enabled:
+        speed_started_at = perf_counter()
+        logger.info(
+            "Этап «Проверка скорости»: начат — профилей: %d, порог: %.0f КБ/с, "
+            "воркеров: %d, режим: %s.",
+            len(profiles),
+            speed_settings.min_kbps,
+            speed_settings.workers,
+            speed_settings.mode,
+        )
+        outcomes = await run_speed_tests(profiles, speed_settings)
+        measured_profiles = []
+        for profile in profiles:
+            outcome = outcomes[id(profile)]
+            if outcome.passed:
+                measured_profiles.append(profile)
+            elif outcome.reason == "speed_unsupported":
+                if speed_settings.mode == "strict":
+                    stats.exclude("speed_unmeasured")
+                else:
+                    measured_profiles.append(profile)
+            else:
+                stats.exclude(outcome.reason or "speed_test_failed")
+        passed_count = sum(1 for outcome in outcomes.values() if outcome.passed)
+        unsupported_kept = sum(
+            1
+            for profile in measured_profiles
+            if outcomes[id(profile)].reason == "speed_unsupported"
+        )
+        speed_duration_ms = _stage_duration_ms(stats, "speed_test", speed_started_at)
+        speed_summary = {
+            "tested": len(outcomes),
+            "passed": passed_count,
+            "failed": len(outcomes) - passed_count,
+            "unsupported_kept": unsupported_kept,
+            "min_kbps": speed_settings.min_kbps,
+            "mode": speed_settings.mode,
+        }
+        logger.info(
+            "Этап «Проверка скорости»: завершён за %s — прошли: %d, не прошли: %d, "
+            "неизмеряемых оставлено: %d.",
+            _duration_text(speed_duration_ms),
+            passed_count,
+            len(outcomes) - passed_count,
+            unsupported_kept,
+        )
+    else:
+        measured_profiles = reachable_profiles
+
     channel_evaluations: dict[str, ChannelEvaluation] = {}
     if preview_targets:
         quality_settings = telegram_settings.quality
@@ -451,10 +504,10 @@ async def run_collection(
     publication_started_at = perf_counter()
     logger.info("Этап «Публикация»: начат.")
     fingerprints_by_profile_id = {
-        id(profile): profile_fingerprint(profile) for profile in reachable_profiles
+        id(profile): profile_fingerprint(profile) for profile in measured_profiles
     }
     state = update_state(paths.state_path, list(fingerprints_by_profile_id.values()), started_at)
-    profiles = list(reachable_profiles)
+    profiles = list(measured_profiles)
     if behavior.strict_first_seen:
         profiles = [
             profile
@@ -505,6 +558,7 @@ async def run_collection(
                         observation.deep_passed for observation in observations.values()
                     ),
                 },
+                speed_test=speed_summary,
             ),
         )
     except OSError:
@@ -543,6 +597,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reachability-workers", type=int)
     parser.add_argument("--reachability-batch-size", type=int)
     parser.add_argument("--reachability-timeout-ms", type=int)
+    parser.add_argument("--speed-workers", type=int)
+    parser.add_argument("--speed-batch-size", type=int)
+    parser.add_argument("--speed-min-kbps", type=float)
     return parser
 
 
@@ -592,6 +649,16 @@ def _apply_cli_overrides(config: CollectorConfig, args: argparse.Namespace) -> C
             workers=args.reachability_workers or config.reachability.workers,
             batch_size=args.reachability_batch_size or config.reachability.batch_size,
             timeout_ms=args.reachability_timeout_ms or config.reachability.timeout_ms,
+        ),
+        speed_test=replace(
+            config.speed_test,
+            workers=args.speed_workers or config.speed_test.workers,
+            batch_size=args.speed_batch_size or config.speed_test.batch_size,
+            min_kbps=(
+                args.speed_min_kbps
+                if args.speed_min_kbps is not None
+                else config.speed_test.min_kbps
+            ),
         ),
     )
 

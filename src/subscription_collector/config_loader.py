@@ -91,6 +91,21 @@ class ReachabilityConfig:
 
 
 @dataclass(frozen=True)
+class SpeedTestConfig:
+    """Tunnel throughput gating applied to unique profiles before publication."""
+
+    enabled: bool = True
+    mode: str = "best_effort"
+    min_kbps: float = 200.0
+    download_bytes: int = 2_097_152
+    max_duration_seconds: float = 8.0
+    timeout_seconds: float = 12.0
+    workers: int = 56
+    batch_size: int = 128
+    download_url: str = "http://cachefly.cachefly.net/5mb.test"
+
+
+@dataclass(frozen=True)
 class PathsConfig:
     input_path: Path
     output_dir: Path
@@ -131,6 +146,7 @@ class CollectorConfig:
     behavior: BehaviorConfig
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     reachability: ReachabilityConfig = field(default_factory=ReachabilityConfig)
+    speed_test: SpeedTestConfig = field(default_factory=SpeedTestConfig)
 
 
 def _mapping(value: Any, location: str) -> dict[str, Any]:
@@ -449,6 +465,59 @@ def _reachability_config(payload: Any) -> ReachabilityConfig:
     )
 
 
+_SPEED_TEST_MODES = {"strict", "best_effort"}
+_SPEED_TEST_KEYS = {
+    "enabled",
+    "mode",
+    "min_kbps",
+    "download_bytes",
+    "max_duration_seconds",
+    "timeout_seconds",
+    "workers",
+    "batch_size",
+    "download_url",
+}
+
+
+def _speed_test_config(payload: Any) -> SpeedTestConfig:
+    if payload is None:
+        return SpeedTestConfig()
+    section = _mapping(payload, "speed_test")
+    _check_keys(section, "speed_test", set(), _SPEED_TEST_KEYS)
+    mode = _or_default(_optional_string(section, "mode", "speed_test"), "best_effort")
+    if mode not in _SPEED_TEST_MODES:
+        raise ConfigError("speed_test.mode должен быть strict или best_effort")
+    download_url = _or_default(
+        _optional_string(section, "download_url", "speed_test"),
+        "http://cachefly.cachefly.net/5mb.test",
+    )
+    parsed_url = urlsplit(download_url)
+    if parsed_url.scheme != "http" or not parsed_url.netloc or parsed_url.path in {"", "/"}:
+        raise ConfigError(
+            "speed_test.download_url должен быть полным HTTP-адресом загружаемого файла"
+        )
+    workers = _or_default(_optional_integer(section, "workers", "speed_test", 1), 56)
+    if not 50 <= workers <= 60:
+        raise ConfigError("speed_test.workers должен быть целым числом от 50 до 60")
+    return SpeedTestConfig(
+        enabled=_or_default(_optional_boolean(section, "enabled", "speed_test"), True),
+        mode=mode,
+        min_kbps=_or_default(_optional_number(section, "min_kbps", "speed_test", 1.0), 200.0),
+        download_bytes=_or_default(
+            _optional_integer(section, "download_bytes", "speed_test", 262_144), 2_097_152
+        ),
+        max_duration_seconds=_or_default(
+            _optional_number(section, "max_duration_seconds", "speed_test", 1.0), 8.0
+        ),
+        timeout_seconds=_or_default(
+            _optional_number(section, "timeout_seconds", "speed_test", 1.0), 12.0
+        ),
+        workers=workers,
+        batch_size=_or_default(_optional_integer(section, "batch_size", "speed_test", 1), 128),
+        download_url=download_url,
+    )
+
+
 def validate_config(config: CollectorConfig) -> CollectorConfig:
     """Validate a configuration object after temporary runtime overrides."""
     payload = {
@@ -518,6 +587,17 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "batch_size": config.reachability.batch_size,
             "timeout_ms": config.reachability.timeout_ms,
         },
+        "speed_test": {
+            "enabled": config.speed_test.enabled,
+            "mode": config.speed_test.mode,
+            "min_kbps": config.speed_test.min_kbps,
+            "download_bytes": config.speed_test.download_bytes,
+            "max_duration_seconds": config.speed_test.max_duration_seconds,
+            "timeout_seconds": config.speed_test.timeout_seconds,
+            "workers": config.speed_test.workers,
+            "batch_size": config.speed_test.batch_size,
+            "download_url": config.speed_test.download_url,
+        },
     }
     _paths_config(payload)
     _sources_config(payload)
@@ -525,6 +605,7 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
     _behavior_config(payload)
     _telegram_config(payload["telegram"])
     _reachability_config(payload["reachability"])
+    _speed_test_config(payload["speed_test"])
     return config
 
 
@@ -542,7 +623,7 @@ def load_config(path: Path | str) -> CollectorConfig:
         root,
         "Корень config.yaml",
         {"paths", "sources", "static_filter", "behavior"},
-        {"telegram", "reachability"},
+        {"telegram", "reachability", "speed_test"},
     )
     return validate_config(
         CollectorConfig(
@@ -552,5 +633,6 @@ def load_config(path: Path | str) -> CollectorConfig:
             behavior=_behavior_config(root),
             telegram=_telegram_config(root.get("telegram")),
             reachability=_reachability_config(root.get("reachability")),
+            speed_test=_speed_test_config(root.get("speed_test")),
         )
     )

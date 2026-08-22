@@ -8,6 +8,7 @@ import pytest
 from subscription_collector import cli
 from subscription_collector.config_loader import CollectorConfig, load_config
 from subscription_collector.reachability import EndpointProbe
+from subscription_collector.speedtest import SpeedOutcome
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,6 +32,16 @@ def responsive_endpoints(monkeypatch: pytest.MonkeyPatch):
         }
 
     monkeypatch.setattr(cli, "probe_endpoints", fake_probe)
+
+
+@pytest.fixture(autouse=True)
+def fast_speed_tests(monkeypatch: pytest.MonkeyPatch):
+    """Keep pipeline tests offline: every measured profile pretends to be fast."""
+
+    async def fake_speed_tests(profiles, settings):
+        return {id(profile): SpeedOutcome(True, kbps=9999.0) for profile in profiles}
+
+    monkeypatch.setattr(cli, "run_speed_tests", fake_speed_tests)
 
 
 @pytest.fixture
