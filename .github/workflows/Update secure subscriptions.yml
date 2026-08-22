@@ -29,9 +29,10 @@ jobs:
         run: |
           test -f output/tg_channels.txt || { echo "missing output/tg_channels.txt"; exit 1; }
           test -f .collector/channel_state.json || { echo "missing .collector/channel_state.json"; exit 1; }
+          test -f .collector/tg_registry.txt || { echo "missing .collector/tg_registry.txt"; exit 1; }
       - name: Commit changed outputs
         run: |
-          git add --all -- output report.json .collector/state.json .collector/channel_state.json output/tg_channels.txt
+          git add --all -- output report.json .collector/state.json .collector/channel_state.json .collector/tg_registry.txt output/tg_channels.txt
           if git diff --cached --quiet; then
             echo "No output changes to commit"
             exit 0
