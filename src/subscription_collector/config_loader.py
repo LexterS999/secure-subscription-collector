@@ -72,10 +72,16 @@ class TelegramConfig:
 
     max_post_age_hours: int = 72
     max_profiles_per_channel: int | None = 1000
-    max_pages_per_channel: int | None = None
+    # Bounded by default: 50 pages (~1000 messages) covers the per-channel
+    # profile cap, so one channel can never stretch a run into hours.
+    max_pages_per_channel: int | None = 50
     reevaluation_interval: int = 3
     concurrency: int = 12
     timeout_seconds: float = 20.0
+    connect_timeout_seconds: float = 10.0
+    total_deadline_seconds: float = 25.0
+    retries: int = 2
+    retry_backoff_seconds: float = 1.0
     max_response_bytes: int = 5_242_880
     max_redirects: int = 3
     quality: ChannelQualityConfig = field(default_factory=ChannelQualityConfig)
@@ -124,6 +130,10 @@ class SourcesConfig:
     max_response_bytes: int
     max_redirects: int
     user_agent: str
+    connect_timeout_seconds: float = 10.0
+    total_deadline_seconds: float = 30.0
+    retries: int = 2
+    retry_backoff_seconds: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -266,10 +276,21 @@ _TELEGRAM_KEYS = {
     "reevaluation_interval",
     "concurrency",
     "timeout_seconds",
+    "connect_timeout_seconds",
+    "total_deadline_seconds",
+    "retries",
+    "retry_backoff_seconds",
     "max_response_bytes",
     "max_redirects",
     "quality",
 }
+_SOURCES_OPTIONAL_KEYS = {
+    "connect_timeout_seconds",
+    "total_deadline_seconds",
+    "retries",
+    "retry_backoff_seconds",
+}
+_MAX_RETRIES = 5
 _REACHABILITY_KEYS = {"workers", "batch_size", "timeout_ms"}
 _CHANNEL_QUALITY_KEYS = {
     "approval_score",
@@ -325,6 +346,31 @@ def _paths_config(payload: dict[str, Any]) -> PathsConfig:
     )
 
 
+def _retry_settings(
+    section: dict[str, Any],
+    location: str,
+    timeout_seconds: float,
+    default_total_deadline_seconds: float,
+) -> tuple[float, float, int, float]:
+    """Parse the optional fast-failure and retry block shared by network stages."""
+    connect_timeout = _or_default(
+        _optional_number(section, "connect_timeout_seconds", location, 0.000001), 10.0
+    )
+    total_deadline = _or_default(
+        _optional_number(section, "total_deadline_seconds", location, 0.000001),
+        default_total_deadline_seconds,
+    )
+    if total_deadline < timeout_seconds:
+        raise ConfigError(
+            f"{location}.total_deadline_seconds должен быть не меньше {location}.timeout_seconds"
+        )
+    retries = _or_default(_optional_integer(section, "retries", location, 0), 2)
+    if retries > _MAX_RETRIES:
+        raise ConfigError(f"{location}.retries должен быть целым числом от 0 до {_MAX_RETRIES}")
+    backoff = _or_default(_optional_number(section, "retry_backoff_seconds", location, 0.0), 1.0)
+    return connect_timeout, total_deadline, retries, backoff
+
+
 def _sources_config(payload: dict[str, Any]) -> SourcesConfig:
     section = _mapping(payload["sources"], "sources")
     _check_keys(
@@ -338,14 +384,23 @@ def _sources_config(payload: dict[str, Any]) -> SourcesConfig:
             "max_redirects",
             "user_agent",
         },
+        _SOURCES_OPTIONAL_KEYS,
+    )
+    timeout_seconds = _number(section, "timeout_seconds", "sources", 0.000001)
+    connect_timeout, total_deadline, retries, backoff = _retry_settings(
+        section, "sources", timeout_seconds, default_total_deadline_seconds=30.0
     )
     return SourcesConfig(
         max_age_hours=_integer(section, "max_age_hours", "sources", 1),
         concurrency=_integer(section, "concurrency", "sources", 1),
-        timeout_seconds=_number(section, "timeout_seconds", "sources", 0.000001),
+        timeout_seconds=timeout_seconds,
         max_response_bytes=_integer(section, "max_response_bytes", "sources", 1),
         max_redirects=_integer(section, "max_redirects", "sources", 0),
         user_agent=_string(section, "user_agent", "sources"),
+        connect_timeout_seconds=connect_timeout,
+        total_deadline_seconds=total_deadline,
+        retries=retries,
+        retry_backoff_seconds=backoff,
     )
 
 
@@ -425,6 +480,12 @@ def _telegram_config(payload: Any) -> TelegramConfig:
     )
     if max_post_age_hours > 72:
         raise ConfigError("telegram.max_post_age_hours должен быть целым числом от 1 до 72")
+    timeout_seconds = _or_default(
+        _optional_number(section, "timeout_seconds", "telegram", 0.000001), 20.0
+    )
+    connect_timeout, total_deadline, retries, backoff = _retry_settings(
+        section, "telegram", timeout_seconds, default_total_deadline_seconds=25.0
+    )
     return TelegramConfig(
         max_post_age_hours=max_post_age_hours,
         max_profiles_per_channel=_or_default(
@@ -436,9 +497,11 @@ def _telegram_config(payload: Any) -> TelegramConfig:
             _optional_integer(section, "reevaluation_interval", "telegram", 1), 3
         ),
         concurrency=_or_default(_optional_integer(section, "concurrency", "telegram", 1), 12),
-        timeout_seconds=_or_default(
-            _optional_number(section, "timeout_seconds", "telegram", 0.000001), 20.0
-        ),
+        timeout_seconds=timeout_seconds,
+        connect_timeout_seconds=connect_timeout,
+        total_deadline_seconds=total_deadline,
+        retries=retries,
+        retry_backoff_seconds=backoff,
         max_response_bytes=_or_default(
             _optional_integer(section, "max_response_bytes", "telegram", 1), 5_242_880
         ),
@@ -534,6 +597,10 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "max_age_hours": config.sources.max_age_hours,
             "concurrency": config.sources.concurrency,
             "timeout_seconds": config.sources.timeout_seconds,
+            "connect_timeout_seconds": config.sources.connect_timeout_seconds,
+            "total_deadline_seconds": config.sources.total_deadline_seconds,
+            "retries": config.sources.retries,
+            "retry_backoff_seconds": config.sources.retry_backoff_seconds,
             "max_response_bytes": config.sources.max_response_bytes,
             "max_redirects": config.sources.max_redirects,
             "user_agent": config.sources.user_agent,
@@ -553,6 +620,10 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "reevaluation_interval": config.telegram.reevaluation_interval,
             "concurrency": config.telegram.concurrency,
             "timeout_seconds": config.telegram.timeout_seconds,
+            "connect_timeout_seconds": config.telegram.connect_timeout_seconds,
+            "total_deadline_seconds": config.telegram.total_deadline_seconds,
+            "retries": config.telegram.retries,
+            "retry_backoff_seconds": config.telegram.retry_backoff_seconds,
             "max_response_bytes": config.telegram.max_response_bytes,
             "max_redirects": config.telegram.max_redirects,
             "quality": {

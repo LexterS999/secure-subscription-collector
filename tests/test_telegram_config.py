@@ -14,10 +14,15 @@ def test_default_config_exposes_public_preview_window_without_unbounded_channels
     assert config.paths.telegram_registry_path == Path(".collector/tg_registry.txt")
     assert config.telegram.max_post_age_hours == 72
     assert config.telegram.max_profiles_per_channel == 1000
-    assert config.telegram.max_pages_per_channel is None
+    # Pagination stays bounded: one channel can never stretch a run into hours.
+    assert config.telegram.max_pages_per_channel == 50
     assert config.telegram.reevaluation_interval == 3
     assert config.telegram.concurrency == 12
-    assert config.telegram.timeout_seconds == 20.0
+    assert config.telegram.timeout_seconds == 12.0
+    assert config.telegram.connect_timeout_seconds == 10.0
+    assert config.telegram.total_deadline_seconds == 25.0
+    assert config.telegram.retries == 2
+    assert config.telegram.retry_backoff_seconds == 1.0
     assert config.telegram.max_response_bytes == 5_242_880
     assert config.telegram.max_redirects == 3
     assert config.telegram.quality.approval_score == 45.0

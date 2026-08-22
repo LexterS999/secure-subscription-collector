@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import statistics
 from collections.abc import Sequence
@@ -57,6 +58,12 @@ from .writer import write_json_atomic
 
 logger = logging.getLogger(__name__)
 
+# Progress telemetry cadence for long network stages: one line every N finished
+# documents/pages, so a stalled feed is always distinguishable from silence.
+_SOURCES_PROGRESS_STEP = 25
+_PAGES_PROGRESS_STEP = 50
+_WATCHDOG_INTERVAL_SECONDS = 120.0
+
 
 def configure_logging() -> None:
     """Configure action-focused logs and suppress per-request transport noise."""
@@ -82,6 +89,18 @@ def _stage_duration_ms(stats: RunStats, stage: str, started_at: float) -> int:
 
 def _duration_text(duration_ms: int) -> str:
     return f"{duration_ms / 1000:.2f} с"
+
+
+async def _stage_watchdog(stage: str, started_at: float) -> None:
+    """Warn periodically while a network stage keeps running beyond expectations."""
+    while True:
+        await asyncio.sleep(_WATCHDOG_INTERVAL_SECONDS)
+        logger.warning(
+            "Этап «%s»: выполняется дольше %.0f с — работа продолжается, "
+            "следите за строками прогресса.",
+            stage,
+            perf_counter() - started_at,
+        )
 
 
 def _parse_and_filter_candidate(
@@ -197,8 +216,31 @@ async def run_collection(
     previous_channels: dict[str, ChannelStateRecord] = {}
     pending_handles: list[str] = []
     due_handles: list[str] = []
+    logged_documents = 0
+    logged_pages = 0
+
+    def report_document_progress(completed: int, total: int) -> None:
+        nonlocal logged_documents
+        if completed == total or completed - logged_documents >= _SOURCES_PROGRESS_STEP:
+            logged_documents = completed
+            logger.info(
+                "Этап «Загрузка источников»: прогресс — загружено %d из %d.", completed, total
+            )
+
+    def report_page_progress(pages_completed: int) -> None:
+        nonlocal logged_pages
+        if pages_completed - logged_pages >= _PAGES_PROGRESS_STEP:
+            logged_pages = pages_completed
+            logger.info(
+                "Этап «Загрузка источников»: прогресс — загружено страниц Telegram: %d.",
+                pages_completed,
+            )
+
+    watchdog = asyncio.create_task(_stage_watchdog("Загрузка источников", fetch_started_at))
     try:
-        sources = await fetch_sources(urls, active_client, started_at, source_settings)
+        sources = await fetch_sources(
+            urls, active_client, started_at, source_settings, progress=report_document_progress
+        )
         for source in sources:
             if source.text is None:
                 continue
@@ -227,9 +269,16 @@ async def run_collection(
         preview_targets = sorted(set(discovered_handles) | set(due_handles))
         if preview_targets:
             channel_previews = await fetch_channel_posts(
-                preview_targets, active_client, started_at, telegram_settings
+                preview_targets,
+                active_client,
+                started_at,
+                telegram_settings,
+                progress=report_page_progress,
             )
     finally:
+        watchdog.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watchdog
         if owns_client:
             await active_client.aclose()
     fetch_duration_ms = _stage_duration_ms(stats, "sources_fetch", fetch_started_at)
