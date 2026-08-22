@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
@@ -11,6 +12,15 @@ import httpx
 from .config_loader import SourcesConfig, TelegramConfig
 from .models import Freshness, SourceResult, TelegramPost
 from .telegram import canonical_preview_url, parse_preview_posts
+
+
+@dataclass(frozen=True, slots=True)
+class ChannelPreview:
+    """Per-channel outcome of paging public previews within the fresh window."""
+
+    handle: str
+    available: bool
+    posts: list[TelegramPost] = field(default_factory=list)
 
 
 def _parse_last_modified(value: str | None) -> datetime | None:
@@ -146,21 +156,26 @@ async def fetch_telegram_previews(
     return list(await asyncio.gather(*(fetch_preview(handle) for handle in handles)))
 
 
-async def fetch_recent_telegram_posts(
+async def fetch_channel_posts(
     handles: Sequence[str],
     client: httpx.AsyncClient,
     now: datetime,
     settings: TelegramConfig,
-) -> list[TelegramPost]:
-    """Page public previews backwards until posts leave the configured fresh window."""
+) -> dict[str, ChannelPreview]:
+    """Page public previews per handle until posts leave the fresh window.
+
+    ``available`` reports whether at least one preview page was fetched, which
+    distinguishes a transport failure from a healthy preview without fresh posts.
+    """
     semaphore = asyncio.Semaphore(settings.concurrency)
 
-    async def collect(handle: str) -> list[TelegramPost]:
+    async def collect(handle: str) -> ChannelPreview:
         base_url = canonical_preview_url(handle)
         collected: list[TelegramPost] = []
         seen_ids: set[str] = set()
         request_url: str | None = base_url
         page_count = 0
+        available = False
         while request_url is not None and (
             settings.max_pages_per_channel is None or page_count < settings.max_pages_per_channel
         ):
@@ -174,6 +189,7 @@ async def fetch_recent_telegram_posts(
                 )
             if reason is not None or text is None:
                 break
+            available = True
             page_posts = parse_preview_posts(text, handle, now, settings.max_post_age_hours)
             new_posts = [post for post in page_posts if post.message_id not in seen_ids]
             if not new_posts:
@@ -188,10 +204,21 @@ async def fetch_recent_telegram_posts(
             ):
                 break
             request_url = f"{base_url}?before={page_posts[-1].message_id}"
-        return collected
+        return ChannelPreview(handle=handle, available=available, posts=collected)
 
     pages = await asyncio.gather(*(collect(handle) for handle in handles))
-    return [post for page in pages for post in page]
+    return {preview.handle.lower(): preview for preview in pages}
+
+
+async def fetch_recent_telegram_posts(
+    handles: Sequence[str],
+    client: httpx.AsyncClient,
+    now: datetime,
+    settings: TelegramConfig,
+) -> list[TelegramPost]:
+    """Collect fresh-window posts for handles in the given order."""
+    previews = await fetch_channel_posts(handles, client, now, settings)
+    return [post for handle in handles for post in previews[handle.lower()].posts]
 
 
 def default_client(settings: SourcesConfig) -> httpx.AsyncClient:

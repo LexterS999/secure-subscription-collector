@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 
 import httpx
 
-from subscription_collector.fetcher import fetch_recent_telegram_posts, fetch_telegram_previews
+from subscription_collector.fetcher import (
+    fetch_channel_posts,
+    fetch_recent_telegram_posts,
+    fetch_telegram_previews,
+)
 from subscription_collector.models import Freshness
 
 NOW = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
@@ -89,5 +93,50 @@ def test_recent_post_fetcher_paginates_until_preview_reaches_old_messages(config
 
         assert [post.message_id for post in posts] == ["20"]
         assert requests == ["https://t.me/s/channel_name", "https://t.me/s/channel_name?before=20"]
+
+    asyncio.run(exercise())
+
+
+def test_channel_posts_collects_every_fresh_page_and_reports_availability(config_for) -> None:
+    async def exercise() -> None:
+        fresh = "2026-08-15T11:30:00+00:00"
+
+        def page(message_id: int) -> str:
+            return f"""
+            <div class="tgme_widget_message" data-post="channel_name/{message_id}">
+              <div class="tgme_widget_message_text">vless://profile-{message_id}</div>
+              <time datetime="{fresh}"></time>
+            </div>
+            """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.params.get("before") is None:
+                return httpx.Response(200, text=page(21))
+            return httpx.Response(200, text=page(20))
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            previews = await fetch_channel_posts(
+                ["Channel_Name"], client, NOW, config_for().telegram
+            )
+
+        preview = previews["channel_name"]
+        assert preview.available is True
+        assert [post.message_id for post in preview.posts] == ["21", "20"]
+
+    asyncio.run(exercise())
+
+
+def test_channel_posts_marks_transport_failure_as_unavailable(config_for) -> None:
+    async def exercise() -> None:
+        def handler(_: httpx.Request) -> httpx.Response:
+            return httpx.Response(302, headers={"Location": "http://not-allowed.example"})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            previews = await fetch_channel_posts(
+                ["channel_name"], client, NOW, config_for().telegram
+            )
+
+        assert previews["channel_name"].available is False
+        assert previews["channel_name"].posts == []
 
     asyncio.run(exercise())

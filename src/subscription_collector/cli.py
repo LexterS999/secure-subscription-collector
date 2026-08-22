@@ -31,15 +31,14 @@ from .channel_state import (
 from .config_loader import (
     CollectorConfig,
     ConfigError,
-    TelegramConfig,
     load_config,
     validate_config,
 )
 from .decoder import extract_candidate_lines
 from .dedup import deduplicate, profile_fingerprint
-from .fetcher import default_client, fetch_sources, fetch_telegram_previews
+from .fetcher import ChannelPreview, default_client, fetch_channel_posts, fetch_sources
 from .input_reader import InputError, read_input_urls
-from .models import Profile, RunStats, SourceResult, TelegramPost
+from .models import Profile, RunStats, TelegramPost
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
@@ -52,7 +51,6 @@ from .telegram import (
     extract_candidate_profile_uris,
     extract_profile_uris,
     extract_telegram_handles,
-    parse_preview_posts,
 )
 from .writer import write_json_atomic
 
@@ -115,23 +113,6 @@ class _TelegramObservation:
     preview_available: bool
     deep_passed: int
     deep_failed: int
-
-
-def _parse_telegram_posts(
-    handles: Sequence[str],
-    previews: Sequence[SourceResult],
-    now: datetime,
-    settings: TelegramConfig,
-) -> dict[str, list[TelegramPost]]:
-    posts_by_handle: dict[str, list[TelegramPost]] = {}
-    for handle, preview in zip(handles, previews, strict=True):
-        if preview.text is None:
-            posts_by_handle[handle] = []
-            continue
-        posts_by_handle[handle] = parse_preview_posts(
-            preview.text, handle, now, settings.max_post_age_hours
-        )
-    return posts_by_handle
 
 
 def _channel_metrics(
@@ -211,7 +192,7 @@ async def run_collection(
     active_client = client or default_client(source_settings)
     discovered_handles: list[str] = []
     preview_targets: list[str] = []
-    preview_results: list[SourceResult] = []
+    channel_previews: dict[str, ChannelPreview] = {}
     previous_channels: dict[str, ChannelStateRecord] = {}
     pending_handles: list[str] = []
     due_handles: list[str] = []
@@ -244,7 +225,7 @@ async def run_collection(
         )
         preview_targets = sorted(set(discovered_handles) | set(due_handles))
         if preview_targets:
-            preview_results = await fetch_telegram_previews(
+            channel_previews = await fetch_channel_posts(
                 preview_targets, active_client, started_at, telegram_settings
             )
     finally:
@@ -259,9 +240,9 @@ async def run_collection(
         len(sources) - usable_sources,
     )
 
-    telegram_posts_by_handle = _parse_telegram_posts(
-        preview_targets, preview_results, started_at, telegram_settings
-    )
+    telegram_posts_by_handle = {
+        handle: channel_previews[handle].posts for handle in preview_targets
+    }
     telegram_posts = [post for posts in telegram_posts_by_handle.values() for post in posts]
     if discovered_handles:
         logger.info(
@@ -342,10 +323,7 @@ async def run_collection(
             supported_uris=supported_uris,
             static_accepted=channel_profiles,
             unique_profiles=deduplicate(channel_profiles),
-            preview_available=any(
-                result.source_url == preview_url and result.text is not None
-                for result in preview_results
-            ),
+            preview_available=channel_previews[handle].available,
             deep_passed=len(channel_profiles),
             deep_failed=parsed_count - len(channel_profiles),
         )

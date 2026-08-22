@@ -528,8 +528,9 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
     return config
 
 
-def load_config(path: Path) -> CollectorConfig:
+def load_config(path: Path | str) -> CollectorConfig:
     """Load and validate the complete runtime configuration from one YAML file."""
+    path = Path(path)
     if not path.is_file():
         raise ConfigError(f"Файл конфигурации не найден: {path}")
     try:
