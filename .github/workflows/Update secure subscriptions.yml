@@ -1,8 +1,8 @@
-name: Scaper
+name: Scraper
 
 'on':
   schedule:
-    - cron: '0 */5 * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 permissions:
@@ -25,6 +25,10 @@ jobs:
       - name: Collect and validate subscriptions
         run: |
           PYTHONPATH=src python -m subscription_collector
+      - name: Verify Telegram channel outputs
+        run: |
+          test -f output/tg_channels.txt || { echo "missing output/tg_channels.txt"; exit 1; }
+          test -f .collector/channel_state.json || { echo "missing .collector/channel_state.json"; exit 1; }
       - name: Commit changed outputs
         run: |
           git add --all -- output report.json .collector/state.json .collector/channel_state.json output/tg_channels.txt
