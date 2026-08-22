@@ -29,6 +29,7 @@
 @filtershekan_channel
 @freakconfig
 @free1_vpn
+@freenet_vt
 @freenettir
 @generalconfiig
 @gozargahazad
@@ -58,6 +59,7 @@
 @napsternetvirani
 @net2ray
 @netfreedom0
+@networld_vpn
 @nexus_panell
 @oneclickvpnkeys
 @orange_vpns
@@ -93,6 +95,8 @@
 @v2rayng_matsuri
 @v2raynplus
 @v2rayyngvpn
+@v2ryng01
+@vegaas_vpn
 @vistav2ray
 @vlessconfig
 @vmess_ir
