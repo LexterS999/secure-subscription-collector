@@ -35,6 +35,7 @@ from .models import Profile, RunStats, SourceResult, TelegramPost
 from .output_store import publish_profiles
 from .parser import parse_profile
 from .policy import evaluate_strict_secure
+from .reachability import endpoint_of, probe_endpoints
 from .report import build_report
 from .state import update_state
 from .telegram import (
@@ -347,6 +348,37 @@ async def run_collection(
         len(accepted) - stats.unique_profiles,
     )
 
+    reachability_started_at = perf_counter()
+    endpoints = sorted(
+        {endpoint for profile in unique if (endpoint := endpoint_of(profile)) is not None}
+    )
+    logger.info(
+        "Этап «Проверка доступности»: начат — конечных точек: %d, потоков: %d, тайм-аут: %d мс.",
+        len(endpoints),
+        config.reachability.workers,
+        config.reachability.timeout_ms,
+    )
+    probes = await probe_endpoints(endpoints, config.reachability)
+    responsive = {endpoint for endpoint, probe in probes.items() if probe.responded}
+    stats.checked_endpoints = len(endpoints)
+    stats.responsive_endpoints = len(responsive)
+    reachable_profiles = [
+        profile
+        for profile in unique
+        if (endpoint := endpoint_of(profile)) is None or endpoint in responsive
+    ]
+    discarded_profiles = len(unique) - len(reachable_profiles)
+    for _ in range(discarded_profiles):
+        stats.exclude("unreachable_endpoint")
+    reachability_duration_ms = _stage_duration_ms(stats, "reachability", reachability_started_at)
+    logger.info(
+        "Этап «Проверка доступности»: завершён за %s — ответили конечных точек: %d, "
+        "отброшено профилей: %d.",
+        _duration_text(reachability_duration_ms),
+        len(responsive),
+        discarded_profiles,
+    )
+
     channel_evaluations: dict[str, ChannelEvaluation] = {}
     if discovered_handles:
         previous_channels = load_channel_state(paths.telegram_state_path)
@@ -376,9 +408,11 @@ async def run_collection(
 
     publication_started_at = perf_counter()
     logger.info("Этап «Публикация»: начат.")
-    fingerprints_by_profile_id = {id(profile): profile_fingerprint(profile) for profile in unique}
+    fingerprints_by_profile_id = {
+        id(profile): profile_fingerprint(profile) for profile in reachable_profiles
+    }
     state = update_state(paths.state_path, list(fingerprints_by_profile_id.values()), started_at)
-    profiles = list(unique)
+    profiles = list(reachable_profiles)
     if behavior.strict_first_seen:
         profiles = [
             profile
@@ -463,6 +497,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-user-agent")
     parser.add_argument("--analysis-workers", type=int)
     parser.add_argument("--analysis-batch-size", type=int)
+    parser.add_argument("--reachability-workers", type=int)
+    parser.add_argument("--reachability-batch-size", type=int)
+    parser.add_argument("--reachability-timeout-ms", type=int)
     return parser
 
 
@@ -506,6 +543,12 @@ def _apply_cli_overrides(config: CollectorConfig, args: argparse.Namespace) -> C
                 if args.fail_on_empty is not None
                 else config.behavior.fail_on_empty
             ),
+        ),
+        reachability=replace(
+            config.reachability,
+            workers=args.reachability_workers or config.reachability.workers,
+            batch_size=args.reachability_batch_size or config.reachability.batch_size,
+            timeout_ms=args.reachability_timeout_ms or config.reachability.timeout_ms,
         ),
     )
 

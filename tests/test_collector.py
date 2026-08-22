@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from subscription_collector import cli
 from subscription_collector.cli import run_collection
 from subscription_collector.decoder import extract_candidate_lines
 from subscription_collector.fetcher import fetch_sources
@@ -21,6 +22,7 @@ TROJAN_TLS = (
     "trojan://correct-horse@node.example.org:443"
     "?security=tls&sni=www.example.com&fp=chrome&type=tcp#source-name"
 )
+TROJAN_DEAD = TROJAN_TLS.replace("node.example.org", "dead.example.org")
 VLESS_SECURE = (
     "vless://123e4567-e89b-12d3-a456-426614174000@edge.example.org:443"
     "?encryption=none&security=tls&sni=www.example.com&fp=chrome&type=grpc#source"
@@ -191,6 +193,53 @@ def test_collection_excludes_insecure_and_low_quality_profiles(tmp_path: Path, c
     excluded = report["counts"]["excluded"]
     assert excluded["insecure_flag"] == 1
     assert excluded["unknown_fingerprint"] == 1
+
+
+def test_collection_discards_profiles_with_unreachable_endpoints(
+    tmp_path: Path, config_for, monkeypatch
+) -> None:
+    """Catches publication of profiles whose servers never answer the TCP probe."""
+    from subscription_collector.reachability import EndpointProbe
+
+    async def selective_probe(endpoints, settings):
+        return {
+            endpoint: EndpointProbe(
+                endpoint.host,
+                endpoint.port,
+                endpoint.use_tls,
+                endpoint.server_name,
+                endpoint.host != "dead.example.org",
+                "tcp",
+            )
+            for endpoint in endpoints
+        }
+
+    monkeypatch.setattr(cli, "probe_endpoints", selective_probe)
+
+    async def exercise() -> dict[str, object]:
+        input_path = tmp_path / "input.txt"
+        report_path = tmp_path / "report.json"
+        input_path.write_text("https://source.example/list\n", encoding="utf-8")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text=f"{TROJAN_TLS}\n{TROJAN_DEAD}\n")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            code = await run_collection(
+                config=config_for(input_path=input_path, report_path=report_path),
+                client=client,
+            )
+        assert code == 0
+        return json.loads(report_path.read_text(encoding="utf-8"))
+
+    report = asyncio.run(exercise())
+    output_dir = config_for().paths.output_dir
+
+    assert (output_dir / "trojan.txt").read_text(encoding="utf-8").count("\n") == 1
+    counts = report["counts"]
+    assert counts["excluded"]["unreachable_endpoint"] == 1
+    assert counts["checked_endpoints"] == 2
+    assert counts["responsive_endpoints"] == 1
 
 
 def test_collection_writes_empty_approved_channel_list_without_handles(

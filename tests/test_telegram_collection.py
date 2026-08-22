@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -148,6 +149,47 @@ def test_public_preview_publishes_all_supported_protocols_only_from_telegram(
     assert hysteria2_output.count("\n") == 1
     assert "323e4567-e89b-12d3-a456-426614174000" not in vless_output
     assert "123e4567-e89b-12d3-a456-426614174000" in vless_output
+
+
+def test_channel_profiles_are_capped_across_all_protocols(tmp_path: Path, config_for) -> None:
+    """The per-channel cap bounds accepted profiles of every protocol combined."""
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("https://seed.example/capped\n", encoding="utf-8")
+    config = replace(
+        config_for(input_path=input_path),
+        telegram=replace(config_for().telegram, max_profiles_per_channel=1),
+    )
+    published_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    preview = "\n".join(
+        (
+            '<div class="tgme_widget_message" data-post="capped_channel/2">'
+            f'<div class="tgme_widget_message_text">{SAFE_VLESS}</div>'
+            f'<time datetime="{published_at}"></time></div>',
+            '<div class="tgme_widget_message" data-post="capped_channel/1">'
+            f'<div class="tgme_widget_message_text">{SAFE_TROJAN}</div>'
+            f'<time datetime="{published_at}"></time></div>',
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "seed.example":
+            return httpx.Response(200, text="#@capped_channel\n")
+        if request.url.host == "t.me":
+            return httpx.Response(200, text=preview)
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async def exercise() -> int:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_collection(config=config, client=client)
+
+    assert asyncio.run(exercise()) == 0
+    vless_output = (config.paths.output_dir / "vless.txt").read_text(encoding="utf-8")
+    trojan_output = (config.paths.output_dir / "trojan.txt").read_text(encoding="utf-8")
+
+    assert vless_output.count("\n") == 1
+    assert trojan_output == ""
+    report = json.loads(config.paths.report_path.read_text(encoding="utf-8"))
+    assert report["telegram"]["static_accepted_profiles"] == 1
 
 
 def test_collection_does_not_fetch_registry_only_channel_without_current_subscription_handle(

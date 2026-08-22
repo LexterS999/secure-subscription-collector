@@ -5,9 +5,31 @@ from pathlib import Path
 
 import pytest
 
+from subscription_collector import cli
 from subscription_collector.config_loader import CollectorConfig, load_config
+from subscription_collector.reachability import EndpointProbe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def responsive_endpoints(monkeypatch: pytest.MonkeyPatch):
+    """Keep pipeline tests offline: every probed endpoint pretends to respond."""
+
+    async def fake_probe(endpoints, settings):
+        return {
+            endpoint: EndpointProbe(
+                endpoint.host,
+                endpoint.port,
+                endpoint.use_tls,
+                endpoint.server_name,
+                True,
+                "tcp",
+            )
+            for endpoint in endpoints
+        }
+
+    monkeypatch.setattr(cli, "probe_endpoints", fake_probe)
 
 
 @pytest.fixture

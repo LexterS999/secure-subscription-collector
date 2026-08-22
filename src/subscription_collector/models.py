@@ -79,6 +79,8 @@ class RunStats:
     parsed_profiles: int = 0
     accepted_profiles: int = 0
     unique_profiles: int = 0
+    checked_endpoints: int = 0
+    responsive_endpoints: int = 0
     timing_ms: dict[str, int] = field(default_factory=dict)
     emitted_profiles: int = 0
     published_new_by_protocol: dict[str, int] = field(default_factory=dict)

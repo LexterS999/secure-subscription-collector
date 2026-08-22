@@ -40,13 +40,13 @@ class ConfigError(ValueError):
 class ChannelQualityConfig:
     """Adaptive public-channel quality model with bounded historical memory."""
 
-    approval_score: float = 70.0
+    approval_score: float = 55.0
     min_evidence_runs: int = 2
     min_supported_candidates: int = 2
     min_fresh_posts: int = 2
-    minimum_confidence: float = 0.5
-    new_channel_margin: float = 20.0
-    near_threshold_margin: float = 8.0
+    minimum_confidence: float = 0.4
+    new_channel_margin: float = 10.0
+    near_threshold_margin: float = 10.0
     history_half_life_hours: float = 72.0
     analysis_prior_passes: float = 1.0
     analysis_prior_failures: float = 1.0
@@ -66,13 +66,22 @@ class TelegramConfig:
     """Public preview collection limits shared by every fetched channel."""
 
     max_post_age_hours: int = 72
-    max_profiles_per_channel: int | None = None
+    max_profiles_per_channel: int | None = 1000
     max_pages_per_channel: int | None = None
     concurrency: int = 12
     timeout_seconds: float = 20.0
     max_response_bytes: int = 5_242_880
     max_redirects: int = 3
     quality: ChannelQualityConfig = field(default_factory=ChannelQualityConfig)
+
+
+@dataclass(frozen=True)
+class ReachabilityConfig:
+    """TCP endpoint probing limits applied before publication."""
+
+    workers: int = 56
+    batch_size: int = 256
+    timeout_ms: int = 1000
 
 
 @dataclass(frozen=True)
@@ -115,6 +124,7 @@ class CollectorConfig:
     static_filter: StaticFilterConfig
     behavior: BehaviorConfig
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    reachability: ReachabilityConfig = field(default_factory=ReachabilityConfig)
 
 
 def _mapping(value: Any, location: str) -> dict[str, Any]:
@@ -228,6 +238,7 @@ _TELEGRAM_KEYS = {
     "max_redirects",
     "quality",
 }
+_REACHABILITY_KEYS = {"workers", "batch_size", "timeout_ms"}
 _CHANNEL_QUALITY_KEYS = {
     "approval_score",
     "min_evidence_runs",
@@ -331,7 +342,7 @@ def _telegram_quality_config(payload: Any) -> ChannelQualityConfig:
         )
 
     return ChannelQualityConfig(
-        approval_score=bounded("approval_score", 70.0, 0.0, 100.0),
+        approval_score=bounded("approval_score", 55.0, 0.0, 100.0),
         min_evidence_runs=_or_default(
             _optional_integer(section, "min_evidence_runs", "telegram.quality", 1), 2
         ),
@@ -341,9 +352,9 @@ def _telegram_quality_config(payload: Any) -> ChannelQualityConfig:
         min_fresh_posts=_or_default(
             _optional_integer(section, "min_fresh_posts", "telegram.quality", 0), 2
         ),
-        minimum_confidence=bounded("minimum_confidence", 0.5, 0.0, 1.0),
-        new_channel_margin=bounded("new_channel_margin", 20.0, 0.0),
-        near_threshold_margin=bounded("near_threshold_margin", 8.0, 0.0),
+        minimum_confidence=bounded("minimum_confidence", 0.4, 0.0, 1.0),
+        new_channel_margin=bounded("new_channel_margin", 10.0, 0.0),
+        near_threshold_margin=bounded("near_threshold_margin", 10.0, 0.0),
         history_half_life_hours=bounded("history_half_life_hours", 72.0, 0.000001),
         analysis_prior_passes=bounded("analysis_prior_passes", 1.0, 0.0),
         analysis_prior_failures=bounded("analysis_prior_failures", 1.0, 0.0),
@@ -372,8 +383,9 @@ def _telegram_config(payload: Any) -> TelegramConfig:
         raise ConfigError("telegram.max_post_age_hours должен быть целым числом от 1 до 72")
     return TelegramConfig(
         max_post_age_hours=max_post_age_hours,
-        max_profiles_per_channel=_optional_integer(
-            section, "max_profiles_per_channel", "telegram", 1
+        max_profiles_per_channel=_or_default(
+            _optional_integer(section, "max_profiles_per_channel", "telegram", 1),
+            1000,
         ),
         max_pages_per_channel=_optional_integer(section, "max_pages_per_channel", "telegram", 1),
         concurrency=_or_default(_optional_integer(section, "concurrency", "telegram", 1), 12),
@@ -385,6 +397,24 @@ def _telegram_config(payload: Any) -> TelegramConfig:
         ),
         max_redirects=_or_default(_optional_integer(section, "max_redirects", "telegram", 0), 3),
         quality=_telegram_quality_config(section.get("quality")),
+    )
+
+
+def _reachability_config(payload: Any) -> ReachabilityConfig:
+    if payload is None:
+        return ReachabilityConfig()
+    section = _mapping(payload, "reachability")
+    _check_keys(section, "reachability", set(), _REACHABILITY_KEYS)
+    workers = _or_default(_optional_integer(section, "workers", "reachability", 1), 56)
+    if not 50 <= workers <= 60:
+        raise ConfigError("reachability.workers должен быть целым числом от 50 до 60")
+    timeout_ms = _or_default(_optional_integer(section, "timeout_ms", "reachability", 1), 1000)
+    if timeout_ms > 1000:
+        raise ConfigError("reachability.timeout_ms должен быть целым числом от 1 до 1000")
+    return ReachabilityConfig(
+        workers=workers,
+        batch_size=_or_default(_optional_integer(section, "batch_size", "reachability", 1), 256),
+        timeout_ms=timeout_ms,
     )
 
 
@@ -446,12 +476,18 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
                 "depth_weight": config.telegram.quality.depth_weight,
             },
         },
+        "reachability": {
+            "workers": config.reachability.workers,
+            "batch_size": config.reachability.batch_size,
+            "timeout_ms": config.reachability.timeout_ms,
+        },
     }
     _paths_config(payload)
     _sources_config(payload)
     _static_filter_config(payload)
     _behavior_config(payload)
     _telegram_config(payload["telegram"])
+    _reachability_config(payload["reachability"])
     return config
 
 
@@ -468,7 +504,7 @@ def load_config(path: Path) -> CollectorConfig:
         root,
         "Корень config.yaml",
         {"paths", "sources", "static_filter", "behavior"},
-        {"telegram"},
+        {"telegram", "reachability"},
     )
     return validate_config(
         CollectorConfig(
@@ -477,5 +513,6 @@ def load_config(path: Path) -> CollectorConfig:
             static_filter=_static_filter_config(root),
             behavior=_behavior_config(root),
             telegram=_telegram_config(root.get("telegram")),
+            reachability=_reachability_config(root.get("reachability")),
         )
     )

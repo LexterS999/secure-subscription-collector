@@ -237,8 +237,14 @@ def evaluate_channel(
         score = round(previous.score * retention + run_score * (1.0 - retention), 2)
 
     if evidence_runs < settings.min_evidence_runs:
-        status = "candidate"
-        reason = "insufficient_evidence"
+        if run_score >= settings.approval_score + settings.new_channel_margin:
+            # Adaptive fast track: an exceptionally strong first observation
+            # shortens the evidence path and approves the channel at once.
+            status = "approved"
+            reason = "approved"
+        else:
+            status = "candidate"
+            reason = "insufficient_evidence"
     elif metrics.fresh_posts < settings.min_fresh_posts:
         status = "excluded"
         reason = "insufficient_fresh_posts"

@@ -52,6 +52,8 @@ def build_report(
             "parsed_profiles": stats.parsed_profiles,
             "accepted_profiles": stats.accepted_profiles,
             "unique_profiles": stats.unique_profiles,
+            "checked_endpoints": stats.checked_endpoints,
+            "responsive_endpoints": stats.responsive_endpoints,
             "emitted_profiles": stats.emitted_profiles,
             "source_freshness": dict(sorted(stats.source_freshness.items())),
             "excluded": dict(sorted(stats.excluded.items())),

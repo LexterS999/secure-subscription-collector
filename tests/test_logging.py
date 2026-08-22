@@ -43,6 +43,8 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
     assert "Этап «Загрузка источников»: начат" in messages
     assert "Этап «Статическая фильтрация»: завершён" in messages
     assert "Этап «Удаление повторов»: завершён" in messages
+    assert "Этап «Проверка доступности»: начат — конечных точек: 2, потоков: 56" in messages
+    assert "Этап «Проверка доступности»: завершён" in messages
     assert "Этап «Публикация»: завершён" in messages
     assert "профиль №" not in messages
     assert "correct-horse" not in messages
@@ -53,6 +55,7 @@ def test_collection_logs_russian_progress_and_redacts_profile_data(
         "sources_fetch",
         "static_filter",
         "deduplication",
+        "reachability",
         "publication",
         "total",
     }

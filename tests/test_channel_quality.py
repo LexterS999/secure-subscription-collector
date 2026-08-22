@@ -27,6 +27,16 @@ HEALTHY = ChannelMetrics(
     unique_profiles=2,
     deep_passed=2,
 )
+MODEST = ChannelMetrics(
+    preview_available=True,
+    fresh_posts=2,
+    all_uri_candidates=10,
+    supported_candidates=2,
+    static_accepted=1,
+    unique_profiles=1,
+    posts_with_profiles=1,
+    deep_passed=1,
+)
 EMPTY = ChannelMetrics(
     preview_available=True,
     fresh_posts=0,
@@ -37,22 +47,32 @@ EMPTY = ChannelMetrics(
 )
 
 
-def test_candidate_requires_two_evidence_runs_before_approval() -> None:
-    evaluation = evaluate_channel("quality_channel", HEALTHY, None, SETTINGS, NOW)
+def test_moderate_channel_waits_for_a_second_observation() -> None:
+    """A mediocre first observation stays a candidate instead of approving early."""
+    evaluation = evaluate_channel("quality_channel", MODEST, None, SETTINGS, NOW)
 
     assert evaluation.status == "candidate"
     assert evaluation.reason == "insufficient_evidence"
     assert evaluation.evidence_runs == 1
-    assert evaluation.score > SETTINGS.approval_score
 
 
-def test_second_healthy_evaluation_approves_channel() -> None:
-    first = evaluate_channel("quality_channel", HEALTHY, None, SETTINGS, NOW)
-    second = evaluate_channel("quality_channel", HEALTHY, first.to_state_record(), SETTINGS, NOW)
+def test_strong_first_observation_approves_channel_immediately() -> None:
+    """The adaptive fast track approves channels whose first observation excels."""
+    evaluation = evaluate_channel("quality_channel", HEALTHY, None, SETTINGS, NOW)
+
+    assert evaluation.status == "approved"
+    assert evaluation.reason == "approved"
+    assert evaluation.evidence_runs == 1
+    assert evaluation.score >= SETTINGS.approval_score + SETTINGS.new_channel_margin
+
+
+def test_second_observation_approves_moderate_channel() -> None:
+    first = evaluate_channel("quality_channel", MODEST, None, SETTINGS, NOW)
+    second = evaluate_channel("quality_channel", MODEST, first.to_state_record(), SETTINGS, NOW)
 
     assert second.status == "approved"
-    assert second.evidence_runs == 2
-    assert second.score >= SETTINGS.approval_score
+    assert second.reason == "approved"
+    assert second.score >= second.required_score
 
 
 def test_low_quality_channel_is_excluded_after_enough_evidence() -> None:
