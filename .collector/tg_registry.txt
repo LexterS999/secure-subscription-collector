@@ -30,6 +30,7 @@
 @filtershekan_channel
 @freakconfig
 @free1_vpn
+@freeland8
 @freenet_vt
 @freenettir
 @generalconfiig
@@ -47,6 +48,8 @@
 @kia_net
 @kurdconfig
 @lent_gc
+@leviconfigs
+@leviconfigs_leviconfigs
 @lonup_m
 @mainv2ray
 @marambashi
@@ -71,6 +74,7 @@
 @privatevpns
 @proxy_kafee
 @proxy_mtm
+@proxyforopeta
 @prrofile_purple
 @red2ray
 @rk_vps
@@ -80,7 +84,6 @@
 @spiddy_ir
 @tehranargo
 @tgrvpn
-@thepackagecom
 @tootffarangi
 @v2all
 @v2ngfast
@@ -92,7 +95,7 @@
 @v2ray_official
 @v2ray_phoenix
 @v2raybaaz
-@v2rayng3
+@v2rayconfigamir
 @v2rayng_fast
 @v2rayng_ip
 @v2rayng_matsuri

@@ -47,6 +47,7 @@
 @kia_net
 @kurdconfig
 @lent_gc
+@leviconfigs
 @lonup_m
 @mainv2ray
 @marambashi
@@ -91,7 +92,7 @@
 @v2ray_official
 @v2ray_phoenix
 @v2raybaaz
-@v2rayng3
+@v2rayconfigamir
 @v2rayng_fast
 @v2rayng_ip
 @v2rayng_matsuri
