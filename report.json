@@ -1,58 +1,59 @@
 {
   "counts": {
-    "accepted_profiles": 48815,
-    "candidate_lines": 135692,
-    "checked_endpoints": 9382,
-    "emitted_profiles": 6392,
+    "accepted_profiles": 41786,
+    "candidate_lines": 117125,
+    "checked_endpoints": 9349,
+    "emitted_profiles": 3473,
     "excluded": {
       "http_error:HTTPStatusError": 2,
-      "insecure_flag": 6354,
-      "invalid_alpn": 88,
-      "invalid_grpc_mode": 7,
+      "insecure_flag": 5339,
+      "invalid_alpn": 70,
+      "invalid_grpc_mode": 18,
       "invalid_or_unsupported": 31,
-      "invalid_reality_key": 48,
-      "invalid_reality_sni": 38,
-      "invalid_short_id": 8,
+      "invalid_reality_key": 96,
+      "invalid_reality_sni": 36,
+      "invalid_short_id": 4,
       "invalid_spider_x": 303,
-      "invalid_ws_path": 87,
-      "missing_fingerprint": 13736,
-      "missing_required_secret": 34216,
-      "missing_security": 15162,
-      "missing_sni": 4658,
-      "response_too_large": 4,
-      "telegram_channel_reference": 8321,
-      "unknown_fingerprint": 92,
-      "unreachable_endpoint": 6504,
-      "unsupported_flow": 11,
-      "unsupported_transport": 3717
+      "invalid_ws_path": 78,
+      "missing_fingerprint": 11503,
+      "missing_required_secret": 30680,
+      "missing_security": 12172,
+      "missing_sni": 4075,
+      "response_too_large": 3,
+      "telegram_channel_reference": 7100,
+      "timeout": 3,
+      "unknown_fingerprint": 60,
+      "unreachable_endpoint": 9195,
+      "unsupported_flow": 9,
+      "unsupported_transport": 3765
     },
-    "fetched_sources": 68,
+    "fetched_sources": 66,
     "input_sources": 74,
-    "parsed_profiles": 135661,
-    "responsive_endpoints": 4248,
+    "parsed_profiles": 117094,
+    "responsive_endpoints": 2486,
     "source_freshness": {
-      "failed": 6,
+      "failed": 8,
       "recent": 3,
-      "unknown": 65
+      "unknown": 63
     },
-    "unique_profiles": 12896
+    "unique_profiles": 12668
   },
-  "generated_at": "2026-08-22T01:31:32Z",
+  "generated_at": "2026-08-22T03:12:15Z",
   "max_source_age_hours": 72,
   "policy": "Strict Secure",
   "publication": {
     "protocols": {
       "hysteria2": {
-        "new": 263,
-        "total": 263
+        "new": 272,
+        "total": 272
       },
       "trojan": {
-        "new": 470,
-        "total": 470
+        "new": 323,
+        "total": 323
       },
       "vless": {
-        "new": 5659,
-        "total": 5659
+        "new": 2878,
+        "total": 2878
       }
     }
   },
@@ -64,8 +65,18 @@
     },
     {
       "freshness": "recent",
-      "last_modified": "2026-08-21T22:27:35+00:00",
+      "last_modified": "2026-08-22T03:12:15+00:00",
       "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "failed",
+      "last_modified": null,
+      "reason": "timeout"
     },
     {
       "freshness": "unknown",
@@ -83,39 +94,29 @@
       "reason": null
     },
     {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
+      "freshness": "unknown",
+      "last_modified": null,
+      "reason": null
+    },
+    {
       "freshness": "failed",
       "last_modified": null,
-      "reason": "response_too_large"
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
-    },
-    {
-      "freshness": "unknown",
-      "last_modified": null,
-      "reason": null
+      "reason": "timeout"
     },
     {
       "freshness": "unknown",
@@ -179,7 +180,7 @@
     },
     {
       "freshness": "recent",
-      "last_modified": "2026-08-22T01:31:33+00:00",
+      "last_modified": "2026-08-22T03:12:16+00:00",
       "reason": null
     },
     {
@@ -218,9 +219,9 @@
       "reason": null
     },
     {
-      "freshness": "unknown",
+      "freshness": "failed",
       "last_modified": null,
-      "reason": null
+      "reason": "timeout"
     },
     {
       "freshness": "unknown",
@@ -430,19 +431,20 @@
   ],
   "strict_first_seen": false,
   "telegram": {
-    "approved_channels": 71,
-    "deep_accepted_profiles": 1856,
-    "discovered_channels": 360,
-    "static_accepted_profiles": 1856,
-    "unique_profiles": 1733,
-    "uri_candidates": 8114
+    "approved_channels": 66,
+    "deep_accepted_profiles": 1528,
+    "discovered_channels": 225,
+    "reevaluated_channels": 0,
+    "static_accepted_profiles": 1528,
+    "unique_profiles": 1419,
+    "uri_candidates": 6546
   },
   "timing_ms": {
-    "deduplication": 608,
-    "publication": 492,
-    "reachability": 124806,
-    "sources_fetch": 42867,
-    "static_filter": 18715,
-    "total": 222749
+    "deduplication": 384,
+    "publication": 288,
+    "reachability": 48756,
+    "sources_fetch": 64976,
+    "static_filter": 11041,
+    "total": 140122
   }
 }
