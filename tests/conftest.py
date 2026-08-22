@@ -25,6 +25,7 @@ def responsive_endpoints(monkeypatch: pytest.MonkeyPatch):
                 endpoint.server_name,
                 True,
                 "tcp",
+                25,
             )
             for endpoint in endpoints
         }

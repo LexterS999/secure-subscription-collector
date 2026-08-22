@@ -38,6 +38,7 @@ class ChannelStateRecord:
     required_score: float = 100.0
     deep_accepted: int = 0
     deep_rejected: int = 0
+    runs_since_evaluation: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +107,11 @@ def _deep_pass_rate(metrics: ChannelMetrics, settings: ChannelQualityConfig) -> 
     if total <= 0:
         return 0.5
     return (prior_passes + passed) / total
+
+
+def score_channel(metrics: ChannelMetrics, settings: ChannelQualityConfig) -> float:
+    """Public run-score view used for population statistics before evaluation."""
+    return _run_score(metrics, settings)
 
 
 def _run_score(
@@ -177,9 +183,27 @@ def _confidence(
 def _required_score(
     confidence: float,
     settings: ChannelQualityConfig,
+    *,
+    evidence_runs: int,
+    previous_score: float | None,
+    run_score: float,
+    population_median: float | None,
 ) -> float:
+    """Adaptive approval bar: evidence discount, momentum credit, pool median."""
     required = settings.approval_score + (1.0 - confidence) * settings.new_channel_margin
-    return round(_bounded(required, 0.0, 100.0), 2)
+    extra_runs = max(0, evidence_runs - settings.min_evidence_runs)
+    required -= min(settings.discount_floor, settings.evidence_discount * extra_runs)
+    if previous_score is not None:
+        momentum = max(0.0, min(settings.momentum_cap, run_score - previous_score))
+        required -= momentum
+    if (
+        settings.relative_approval
+        and population_median is not None
+        and run_score >= population_median
+    ):
+        required = min(required, population_median)
+    floor = max(0.0, settings.approval_score - settings.relative_floor)
+    return round(_bounded(required, floor, 100.0), 2)
 
 
 def evaluate_channel(
@@ -188,6 +212,7 @@ def evaluate_channel(
     previous: ChannelStateRecord | None,
     settings: ChannelQualityConfig,
     observed_at: datetime,
+    population_median: float | None = None,
 ) -> ChannelEvaluation:
     """Score a public source using observable data with bounded historical memory."""
     timestamp = _timestamp(observed_at)
@@ -218,13 +243,14 @@ def evaluate_channel(
         evidence_runs,
         settings,
     )
+    run_score = score_channel(metrics, settings)
     required_score = _required_score(
         confidence,
         settings,
-    )
-    run_score = _run_score(
-        metrics,
-        settings,
+        evidence_runs=evidence_runs,
+        previous_score=previous.score if previous is not None else None,
+        run_score=run_score,
+        population_median=population_median,
     )
 
     if previous is None or (previous.status == "excluded" and run_score >= required_score):
@@ -240,6 +266,15 @@ def evaluate_channel(
         if run_score >= settings.approval_score + settings.new_channel_margin:
             # Adaptive fast track: an exceptionally strong first observation
             # shortens the evidence path and approves the channel at once.
+            status = "approved"
+            reason = "approved"
+        elif (
+            settings.relative_approval
+            and population_median is not None
+            and run_score >= max(settings.approval_score, population_median)
+        ):
+            # Pool-relative early approval: a channel above both the absolute
+            # bar and the current pool median is strong enough to skip the queue.
             status = "approved"
             reason = "approved"
         else:

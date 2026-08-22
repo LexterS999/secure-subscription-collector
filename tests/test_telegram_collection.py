@@ -76,14 +76,16 @@ def test_public_preview_profiles_pass_full_analysis_and_approve_quality_channel(
     assert "quality_channel" not in config.paths.telegram_state_path.read_text(encoding="utf-8")
     telegram_report = report["telegram"]
     assert telegram_report["discovered_channels"] == 1
+    assert telegram_report["reevaluated_channels"] == 0
     assert telegram_report["approved_channels"] == 1
     assert telegram_report["uri_candidates"] == 2
     assert telegram_report["static_accepted_profiles"] == 2
     assert telegram_report["unique_profiles"] == 2
     assert telegram_report["deep_accepted_profiles"] == 2
     assert (
-        "Telegram: обнаружено публичных каналов: 1; свежих сообщений за 72 ч: 2; "
-        "URI-кандидатов: 2." in "\n".join(record.getMessage() for record in caplog.records)
+        "Telegram: обнаружено публичных каналов: 1; к переоценке: 0; "
+        "свежих сообщений за 72 ч: 2; URI-кандидатов: 2."
+        in "\n".join(record.getMessage() for record in caplog.records)
     )
     assert "https://t.me/s/quality_channel" in requests
 
@@ -149,6 +151,85 @@ def test_public_preview_publishes_all_supported_protocols_only_from_telegram(
     assert hysteria2_output.count("\n") == 1
     assert "323e4567-e89b-12d3-a456-426614174000" not in vless_output
     assert "123e4567-e89b-12d3-a456-426614174000" in vless_output
+
+
+def test_registry_channel_is_reevaluated_every_third_run(tmp_path: Path, config_for) -> None:
+    """Old registry channels are re-checked once per re-evaluation interval."""
+    input_path = tmp_path / "input.txt"
+    config = config_for(input_path=input_path)
+    requests: list[str] = []
+    seed = SAFE_VLESS.replace(
+        "123e4567-e89b-12d3-a456-426614174000",
+        "323e4567-e89b-12d3-a456-426614174000",
+    ).replace("#preview", "#@quality_channel")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        if request.url.host == "seed.example":
+            return httpx.Response(200, text=seed if "sub" in str(request.url) else "")
+        return httpx.Response(200, text=_preview_html())
+
+    async def exercise() -> list[int]:
+        outcomes: list[int] = []
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            for _ in range(2):
+                # Discovery run followed by a run without any channel mention.
+                input_path.write_text("https://seed.example/sub\n", encoding="utf-8")
+                outcomes.append(await run_collection(config=config, client=client))
+                input_path.write_text("https://seed.example/empty\n", encoding="utf-8")
+                outcomes.append(await run_collection(config=config, client=client))
+            # Third and fourth consecutive absent runs: the channel becomes due.
+            outcomes.append(await run_collection(config=config, client=client))
+            outcomes.append(await run_collection(config=config, client=client))
+        return outcomes
+
+    assert asyncio.run(exercise()) == [0] * 6
+
+    # Schedule: run 3 re-discovers the channel and resets its counter; three
+    # further absent runs later trigger one due re-evaluation on run 6.
+    state_records = json.loads(config.paths.telegram_state_path.read_text(encoding="utf-8"))
+    assert state_records["run_index"] == 6
+    record = next(iter(state_records["channels"].values()))
+    assert record["runs_since_evaluation"] == 0
+    assert record["status"] == "approved"
+    assert config.paths.telegram_registry_path.read_text(encoding="utf-8") == "@quality_channel\n"
+    assert config.paths.tg_channels_path.read_text(encoding="utf-8") == "@quality_channel\n"
+
+
+def test_stale_failing_channel_is_removed_from_registry_and_output(
+    tmp_path: Path, config_for
+) -> None:
+    """A channel that stops meeting the metrics is dropped at its next evaluation."""
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("https://seed.example/sub\n", encoding="utf-8")
+    config = config_for(input_path=input_path)
+    previews = {"count": 0}
+    seed = SAFE_VLESS.replace(
+        "123e4567-e89b-12d3-a456-426614174000",
+        "323e4567-e89b-12d3-a456-426614174000",
+    ).replace("#preview", "#@quality_channel")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "seed.example":
+            return httpx.Response(200, text=seed)
+        previews["count"] += 1
+        if previews["count"] == 1:
+            return httpx.Response(200, text=_preview_html())
+        return httpx.Response(200, text="<html><body>no profiles here</body></html>")
+
+    async def exercise() -> tuple[int, int]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            first = await run_collection(config=config, client=client)
+            second = await run_collection(config=config, client=client)
+        return first, second
+
+    assert asyncio.run(exercise()) == (0, 0)
+
+    assert config.paths.tg_channels_path.read_text(encoding="utf-8") == ""
+    assert config.paths.telegram_registry_path.read_text(encoding="utf-8") == ""
+    state_records = json.loads(config.paths.telegram_state_path.read_text(encoding="utf-8"))
+    record = next(iter(state_records["channels"].values()))
+    assert record["status"] == "excluded"
 
 
 def test_channel_profiles_are_capped_across_all_protocols(tmp_path: Path, config_for) -> None:

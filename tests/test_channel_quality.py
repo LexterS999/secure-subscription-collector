@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -30,11 +31,21 @@ HEALTHY = ChannelMetrics(
 MODEST = ChannelMetrics(
     preview_available=True,
     fresh_posts=2,
-    all_uri_candidates=10,
+    all_uri_candidates=12,
     supported_candidates=2,
     static_accepted=1,
     unique_profiles=1,
     posts_with_profiles=1,
+    deep_passed=1,
+)
+LOW = ChannelMetrics(
+    preview_available=True,
+    fresh_posts=2,
+    all_uri_candidates=20,
+    supported_candidates=2,
+    static_accepted=1,
+    unique_profiles=1,
+    posts_with_profiles=0,
     deep_passed=1,
 )
 EMPTY = ChannelMetrics(
@@ -73,6 +84,53 @@ def test_second_observation_approves_moderate_channel() -> None:
     assert second.status == "approved"
     assert second.reason == "approved"
     assert second.score >= second.required_score
+
+
+def test_repeated_observations_loosen_the_required_score() -> None:
+    """Evidence discount: persistence lowers the bar until approval is reached."""
+    first = evaluate_channel("quality_channel", LOW, None, SETTINGS, NOW)
+    second = evaluate_channel("quality_channel", LOW, first.to_state_record(), SETTINGS, NOW)
+    third = evaluate_channel("quality_channel", LOW, second.to_state_record(), SETTINGS, NOW)
+
+    assert first.status == "candidate"
+    assert second.status == "watch"
+    assert third.status == "approved"
+    assert third.required_score < second.required_score
+
+
+def test_momentum_improvement_reduces_the_required_score() -> None:
+    """Momentum credit: an improving channel is approved sooner than a flat one."""
+    flat_first = evaluate_channel("quality_channel", LOW, None, SETTINGS, NOW)
+    flat = evaluate_channel("quality_channel", LOW, flat_first.to_state_record(), SETTINGS, NOW)
+    rising = evaluate_channel(
+        "quality_channel", MODEST, flat_first.to_state_record(), SETTINGS, NOW
+    )
+
+    assert flat.status == "watch"
+    assert rising.status == "approved"
+    assert rising.required_score < flat.required_score
+
+
+def test_population_median_lowers_the_bar_only_for_above_median_channels() -> None:
+    """Relative approval: the pool median becomes the bar, floored near the threshold."""
+    below = evaluate_channel("quality_channel", LOW, None, SETTINGS, NOW, population_median=90.0)
+    above = evaluate_channel("quality_channel", MODEST, None, SETTINGS, NOW, population_median=50.0)
+    without = evaluate_channel("quality_channel", MODEST, None, SETTINGS, NOW)
+
+    assert below.required_score >= 50.0
+    assert above.required_score == 50.0
+    assert above.required_score < without.required_score
+    assert above.status == "approved"
+
+
+def test_relative_approval_can_be_disabled() -> None:
+    strict = replace(SETTINGS, relative_approval=False)
+    evaluation = evaluate_channel(
+        "quality_channel", MODEST, None, strict, NOW, population_median=50.0
+    )
+    baseline = evaluate_channel("quality_channel", MODEST, None, strict, NOW)
+
+    assert evaluation.required_score == baseline.required_score
 
 
 def test_low_quality_channel_is_excluded_after_enough_evidence() -> None:

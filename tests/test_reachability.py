@@ -187,7 +187,7 @@ def test_domain_without_doh_answer_is_discarded() -> None:
 
 def test_default_reachability_settings_match_documented_values() -> None:
     config = load_config(PROJECT_ROOT / "config.yaml")
-    assert config.reachability == ReachabilityConfig(workers=56, batch_size=256, timeout_ms=1000)
+    assert config.reachability == ReachabilityConfig(workers=56, batch_size=256, timeout_ms=300)
 
 
 @pytest.mark.parametrize("workers", [49, 61])
@@ -201,11 +201,11 @@ def test_worker_count_is_bounded_to_documented_range(tmp_path: Path, workers: in
         load_config(config_path)
 
 
-def test_timeout_above_one_second_is_rejected(tmp_path: Path) -> None:
+def test_timeout_above_300_ms_is_rejected(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     payload = yaml.safe_load((PROJECT_ROOT / "config.yaml").read_text(encoding="utf-8"))
-    payload["reachability"]["timeout_ms"] = 1500
+    payload["reachability"]["timeout_ms"] = 500
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
 
-    with pytest.raises(ConfigError, match="от 1 до 1000"):
+    with pytest.raises(ConfigError, match="от 1 до 300"):
         load_config(config_path)

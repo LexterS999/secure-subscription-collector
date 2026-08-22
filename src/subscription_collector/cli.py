@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import statistics
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -13,10 +14,17 @@ from time import perf_counter
 import httpx
 
 from .analysis import analyze_profile
-from .channel_quality import ChannelEvaluation, ChannelMetrics, evaluate_channel
+from .channel_quality import (
+    ChannelEvaluation,
+    ChannelMetrics,
+    ChannelStateRecord,
+    evaluate_channel,
+    score_channel,
+)
 from .channel_state import (
     channel_state_key,
     load_channel_state,
+    read_channel_registry,
     update_channel_state,
     write_channel_registry,
 )
@@ -202,7 +210,11 @@ async def run_collection(
     owns_client = client is None
     active_client = client or default_client(source_settings)
     discovered_handles: list[str] = []
+    preview_targets: list[str] = []
     preview_results: list[SourceResult] = []
+    previous_channels: dict[str, ChannelStateRecord] = {}
+    pending_handles: list[str] = []
+    due_handles: list[str] = []
     try:
         sources = await fetch_sources(urls, active_client, started_at, source_settings)
         for source in sources:
@@ -212,10 +224,28 @@ async def run_collection(
                 if handle not in discovered_handles:
                     discovered_handles.append(handle)
         discovered_handles.sort()
-        write_channel_registry(paths.telegram_registry_path, discovered_handles)
-        if discovered_handles:
+        # Periodic re-evaluation: channels kept in the registry but absent from
+        # the current subscriptions are re-checked once per reevaluation_interval
+        # runs, so stale channels are either confirmed or dropped.
+        previous_channels = load_channel_state(paths.telegram_state_path)
+        known_handles = read_channel_registry(paths.telegram_registry_path)
+        interval = telegram_settings.reevaluation_interval
+        pending_handles = sorted(
+            handle
+            for handle in known_handles
+            if handle not in set(discovered_handles)
+            and (record := previous_channels.get(channel_state_key(handle))) is not None
+            and record.status != "excluded"
+        )
+        due_handles = sorted(
+            handle
+            for handle in pending_handles
+            if previous_channels[channel_state_key(handle)].runs_since_evaluation + 1 >= interval
+        )
+        preview_targets = sorted(set(discovered_handles) | set(due_handles))
+        if preview_targets:
             preview_results = await fetch_telegram_previews(
-                discovered_handles, active_client, started_at, telegram_settings
+                preview_targets, active_client, started_at, telegram_settings
             )
     finally:
         if owns_client:
@@ -230,14 +260,15 @@ async def run_collection(
     )
 
     telegram_posts_by_handle = _parse_telegram_posts(
-        discovered_handles, preview_results, started_at, telegram_settings
+        preview_targets, preview_results, started_at, telegram_settings
     )
     telegram_posts = [post for posts in telegram_posts_by_handle.values() for post in posts]
     if discovered_handles:
         logger.info(
-            "Telegram: обнаружено публичных каналов: %d; свежих сообщений за %d ч: %d; "
-            "URI-кандидатов: %d.",
+            "Telegram: обнаружено публичных каналов: %d; к переоценке: %d; "
+            "свежих сообщений за %d ч: %d; URI-кандидатов: %d.",
             len(discovered_handles),
+            len(due_handles),
             telegram_settings.max_post_age_hours,
             len(telegram_posts),
             len(extract_profile_uris(telegram_posts)),
@@ -371,37 +402,70 @@ async def run_collection(
     for _ in range(discarded_profiles):
         stats.exclude("unreachable_endpoint")
     reachability_duration_ms = _stage_duration_ms(stats, "reachability", reachability_started_at)
+    latencies = [
+        probe.latency_ms
+        for probe in probes.values()
+        if probe.responded and probe.latency_ms is not None
+    ]
+    median_latency = round(statistics.median(latencies)) if latencies else 0
     logger.info(
-        "Этап «Проверка доступности»: завершён за %s — ответили конечных точек: %d, "
-        "отброшено профилей: %d.",
+        "Этап «Проверка доступности»: завершён за %s — ответили конечных точек: %d "
+        "(медиана задержки: %d мс), отброшено профилей: %d.",
         _duration_text(reachability_duration_ms),
         len(responsive),
+        median_latency,
         discarded_profiles,
     )
 
     channel_evaluations: dict[str, ChannelEvaluation] = {}
-    if discovered_handles:
-        previous_channels = load_channel_state(paths.telegram_state_path)
-        for handle in discovered_handles:
-            observation = observations[handle]
-            metrics = _channel_metrics(observation.posts, observation)
-            previous = previous_channels.get(channel_state_key(handle))
+    if preview_targets:
+        quality_settings = telegram_settings.quality
+        metrics_by_handle = {
+            handle: _channel_metrics(telegram_posts_by_handle[handle], observations[handle])
+            for handle in preview_targets
+        }
+        run_scores = [
+            score_channel(metrics, quality_settings) for metrics in metrics_by_handle.values()
+        ]
+        # Relative approval mirrors aggregator pools: the median bar applies only
+        # when at least two channels compete, so a lone channel is judged alone.
+        population_median = statistics.median(run_scores) if len(run_scores) >= 2 else None
+        for handle in preview_targets:
             channel_evaluations[handle] = evaluate_channel(
                 handle,
-                metrics,
-                previous,
-                telegram_settings.quality,
+                metrics_by_handle[handle],
+                previous_channels.get(channel_state_key(handle)),
+                quality_settings,
                 started_at,
+                population_median=population_median,
             )
-        update_channel_state(paths.telegram_state_path, channel_evaluations, started_at)
-        approved_handles = sorted(
-            handle
-            for handle, evaluation in channel_evaluations.items()
-            if evaluation.status == "approved"
-        )
-        write_channel_registry(paths.tg_channels_path, approved_handles)
-    else:
-        write_channel_registry(paths.tg_channels_path, [])
+    # Approved channels from this evaluation are published; channels that were
+    # not re-evaluated keep their approval, so idle runs never wipe the file.
+    evaluated_approved = {
+        handle
+        for handle, evaluation in channel_evaluations.items()
+        if evaluation.status == "approved"
+    }
+    carried_approved = {
+        handle
+        for handle in set(known_handles) | set(discovered_handles)
+        if handle not in channel_evaluations
+        and (record := previous_channels.get(channel_state_key(handle))) is not None
+        and record.status == "approved"
+    }
+    write_channel_registry(paths.tg_channels_path, sorted(evaluated_approved | carried_approved))
+    # Merge evaluations and age every channel skipped this run so the
+    # re-evaluation interval keeps ticking even when nothing was discovered.
+    update_channel_state(paths.telegram_state_path, channel_evaluations, started_at)
+    excluded_handles = {
+        handle
+        for handle, evaluation in channel_evaluations.items()
+        if evaluation.status == "excluded"
+    }
+    # Channels that fail every quality metric leave the registry and the output
+    # file; channels awaiting their re-evaluation slot are carried over.
+    registry_handles = sorted((set(discovered_handles) | set(pending_handles)) - excluded_handles)
+    write_channel_registry(paths.telegram_registry_path, registry_handles)
     approved_channels = sum(
         1 for evaluation in channel_evaluations.values() if evaluation.status == "approved"
     )
@@ -448,6 +512,7 @@ async def run_collection(
                 strict_first_seen=behavior.strict_first_seen,
                 telegram={
                     "discovered_channels": len(discovered_handles),
+                    "reevaluated_channels": len(due_handles),
                     "approved_channels": approved_channels,
                     "uri_candidates": sum(
                         len(observation.supported_uris) for observation in observations.values()

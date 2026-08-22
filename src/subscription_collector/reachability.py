@@ -44,7 +44,7 @@ class Endpoint:
 
 @dataclass(frozen=True, slots=True)
 class EndpointProbe:
-    """Redacted outcome of one reachability attempt."""
+    """Redacted outcome of one reachability attempt with handshake latency."""
 
     host: str
     port: int
@@ -52,6 +52,7 @@ class EndpointProbe:
     server_name: str
     responded: bool
     method: str
+    latency_ms: int | None = None
 
 
 def _is_ip_literal(value: str) -> bool:
@@ -140,11 +141,12 @@ async def probe_endpoint(
     timeout: float,
     dns_fallback_client: httpx.AsyncClient | None = None,
 ) -> EndpointProbe:
-    """Probe one endpoint over TCP and confirm liveness within the deadline."""
+    """Probe one endpoint over TCP/TLS and confirm liveness within the deadline."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     context = _ssl_context(endpoint)
     server_name = _sni_hostname(endpoint)
+    handshake_started = loop.time()
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(
@@ -158,7 +160,12 @@ async def probe_endpoint(
             resolved = await _resolve_via_doh(endpoint, dns_fallback_client)
         if resolved is None:
             return EndpointProbe(
-                endpoint.host, endpoint.port, endpoint.use_tls, endpoint.server_name, False, "tcp"
+                endpoint.host,
+                endpoint.port,
+                endpoint.use_tls,
+                endpoint.server_name,
+                False,
+                "tcp",
             )
         remaining = max(0.0, deadline - loop.time())
         try:
@@ -170,12 +177,18 @@ async def probe_endpoint(
             )
         except (TimeoutError, OSError, ssl.SSLError):
             return EndpointProbe(
-                endpoint.host, endpoint.port, endpoint.use_tls, endpoint.server_name, False, "tcp"
+                endpoint.host,
+                endpoint.port,
+                endpoint.use_tls,
+                endpoint.server_name,
+                False,
+                "tcp",
             )
     except (TimeoutError, OSError, ssl.SSLError):
         return EndpointProbe(
             endpoint.host, endpoint.port, endpoint.use_tls, endpoint.server_name, False, "tcp"
         )
+    latency_ms = round((loop.time() - handshake_started) * 1000)
 
     method = "tcp"
     for path, label in (
@@ -190,7 +203,13 @@ async def probe_endpoint(
             break
     writer.close()
     return EndpointProbe(
-        endpoint.host, endpoint.port, endpoint.use_tls, endpoint.server_name, True, method
+        endpoint.host,
+        endpoint.port,
+        endpoint.use_tls,
+        endpoint.server_name,
+        True,
+        method,
+        latency_ms,
     )
 
 

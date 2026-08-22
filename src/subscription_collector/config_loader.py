@@ -40,16 +40,21 @@ class ConfigError(ValueError):
 class ChannelQualityConfig:
     """Adaptive public-channel quality model with bounded historical memory."""
 
-    approval_score: float = 55.0
+    approval_score: float = 45.0
     min_evidence_runs: int = 2
-    min_supported_candidates: int = 2
-    min_fresh_posts: int = 2
-    minimum_confidence: float = 0.4
-    new_channel_margin: float = 10.0
-    near_threshold_margin: float = 10.0
+    min_supported_candidates: int = 1
+    min_fresh_posts: int = 1
+    minimum_confidence: float = 0.3
+    new_channel_margin: float = 8.0
+    near_threshold_margin: float = 12.0
     history_half_life_hours: float = 72.0
     analysis_prior_passes: float = 1.0
     analysis_prior_failures: float = 1.0
+    evidence_discount: float = 2.0
+    discount_floor: float = 15.0
+    momentum_cap: float = 5.0
+    relative_approval: bool = True
+    relative_floor: float = 10.0
     activity_weight: float = 15.0
     supported_yield_weight: float = 15.0
     static_security_weight: float = 20.0
@@ -68,6 +73,7 @@ class TelegramConfig:
     max_post_age_hours: int = 72
     max_profiles_per_channel: int | None = 1000
     max_pages_per_channel: int | None = None
+    reevaluation_interval: int = 3
     concurrency: int = 12
     timeout_seconds: float = 20.0
     max_response_bytes: int = 5_242_880
@@ -81,7 +87,7 @@ class ReachabilityConfig:
 
     workers: int = 56
     batch_size: int = 256
-    timeout_ms: int = 1000
+    timeout_ms: int = 300
 
 
 @dataclass(frozen=True)
@@ -214,6 +220,15 @@ def _boolean(section: dict[str, Any], key: str, location: str) -> bool:
     return value
 
 
+def _optional_boolean(section: dict[str, Any], key: str, location: str) -> bool | None:
+    if key not in section or section[key] is None:
+        return None
+    value = section[key]
+    if not isinstance(value, bool):
+        raise ConfigError(f"{location}.{key} должен быть true или false")
+    return value
+
+
 def _or_default(value: _T | None, default: _T) -> _T:
     return default if value is None else value
 
@@ -232,6 +247,7 @@ _TELEGRAM_KEYS = {
     "max_post_age_hours",
     "max_profiles_per_channel",
     "max_pages_per_channel",
+    "reevaluation_interval",
     "concurrency",
     "timeout_seconds",
     "max_response_bytes",
@@ -250,6 +266,11 @@ _CHANNEL_QUALITY_KEYS = {
     "history_half_life_hours",
     "analysis_prior_passes",
     "analysis_prior_failures",
+    "evidence_discount",
+    "discount_floor",
+    "momentum_cap",
+    "relative_approval",
+    "relative_floor",
     "activity_weight",
     "supported_yield_weight",
     "static_security_weight",
@@ -342,22 +363,29 @@ def _telegram_quality_config(payload: Any) -> ChannelQualityConfig:
         )
 
     return ChannelQualityConfig(
-        approval_score=bounded("approval_score", 55.0, 0.0, 100.0),
+        approval_score=bounded("approval_score", 45.0, 0.0, 100.0),
         min_evidence_runs=_or_default(
             _optional_integer(section, "min_evidence_runs", "telegram.quality", 1), 2
         ),
         min_supported_candidates=_or_default(
-            _optional_integer(section, "min_supported_candidates", "telegram.quality", 0), 2
+            _optional_integer(section, "min_supported_candidates", "telegram.quality", 0), 1
         ),
         min_fresh_posts=_or_default(
-            _optional_integer(section, "min_fresh_posts", "telegram.quality", 0), 2
+            _optional_integer(section, "min_fresh_posts", "telegram.quality", 0), 1
         ),
-        minimum_confidence=bounded("minimum_confidence", 0.4, 0.0, 1.0),
-        new_channel_margin=bounded("new_channel_margin", 10.0, 0.0),
-        near_threshold_margin=bounded("near_threshold_margin", 10.0, 0.0),
+        minimum_confidence=bounded("minimum_confidence", 0.3, 0.0, 1.0),
+        new_channel_margin=bounded("new_channel_margin", 8.0, 0.0),
+        near_threshold_margin=bounded("near_threshold_margin", 12.0, 0.0),
         history_half_life_hours=bounded("history_half_life_hours", 72.0, 0.000001),
         analysis_prior_passes=bounded("analysis_prior_passes", 1.0, 0.0),
         analysis_prior_failures=bounded("analysis_prior_failures", 1.0, 0.0),
+        evidence_discount=bounded("evidence_discount", 2.0, 0.0),
+        discount_floor=bounded("discount_floor", 15.0, 0.0),
+        momentum_cap=bounded("momentum_cap", 5.0, 0.0),
+        relative_approval=_or_default(
+            _optional_boolean(section, "relative_approval", "telegram.quality"), True
+        ),
+        relative_floor=bounded("relative_floor", 10.0, 0.0),
         activity_weight=bounded("activity_weight", 15.0, 0.0),
         supported_yield_weight=bounded("supported_yield_weight", 15.0, 0.0),
         static_security_weight=bounded("static_security_weight", 20.0, 0.0),
@@ -388,6 +416,9 @@ def _telegram_config(payload: Any) -> TelegramConfig:
             1000,
         ),
         max_pages_per_channel=_optional_integer(section, "max_pages_per_channel", "telegram", 1),
+        reevaluation_interval=_or_default(
+            _optional_integer(section, "reevaluation_interval", "telegram", 1), 3
+        ),
         concurrency=_or_default(_optional_integer(section, "concurrency", "telegram", 1), 12),
         timeout_seconds=_or_default(
             _optional_number(section, "timeout_seconds", "telegram", 0.000001), 20.0
@@ -408,9 +439,9 @@ def _reachability_config(payload: Any) -> ReachabilityConfig:
     workers = _or_default(_optional_integer(section, "workers", "reachability", 1), 56)
     if not 50 <= workers <= 60:
         raise ConfigError("reachability.workers должен быть целым числом от 50 до 60")
-    timeout_ms = _or_default(_optional_integer(section, "timeout_ms", "reachability", 1), 1000)
-    if timeout_ms > 1000:
-        raise ConfigError("reachability.timeout_ms должен быть целым числом от 1 до 1000")
+    timeout_ms = _or_default(_optional_integer(section, "timeout_ms", "reachability", 1), 300)
+    if timeout_ms > 300:
+        raise ConfigError("reachability.timeout_ms должен быть целым числом от 1 до 300")
     return ReachabilityConfig(
         workers=workers,
         batch_size=_or_default(_optional_integer(section, "batch_size", "reachability", 1), 256),
@@ -450,6 +481,7 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
             "max_post_age_hours": config.telegram.max_post_age_hours,
             "max_profiles_per_channel": config.telegram.max_profiles_per_channel,
             "max_pages_per_channel": config.telegram.max_pages_per_channel,
+            "reevaluation_interval": config.telegram.reevaluation_interval,
             "concurrency": config.telegram.concurrency,
             "timeout_seconds": config.telegram.timeout_seconds,
             "max_response_bytes": config.telegram.max_response_bytes,
@@ -465,6 +497,11 @@ def validate_config(config: CollectorConfig) -> CollectorConfig:
                 "history_half_life_hours": config.telegram.quality.history_half_life_hours,
                 "analysis_prior_passes": config.telegram.quality.analysis_prior_passes,
                 "analysis_prior_failures": config.telegram.quality.analysis_prior_failures,
+                "evidence_discount": config.telegram.quality.evidence_discount,
+                "discount_floor": config.telegram.quality.discount_floor,
+                "momentum_cap": config.telegram.quality.momentum_cap,
+                "relative_approval": config.telegram.quality.relative_approval,
+                "relative_floor": config.telegram.quality.relative_floor,
                 "activity_weight": config.telegram.quality.activity_weight,
                 "supported_yield_weight": config.telegram.quality.supported_yield_weight,
                 "static_security_weight": config.telegram.quality.static_security_weight,
