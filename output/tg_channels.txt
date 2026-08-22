@@ -1,5 +1,6 @@
 @alpha_v2rayip
 @ange1vpn
+@anonymouskeys
 @ansooyefilter
 @ap_ir6
 @appsooner
@@ -59,6 +60,7 @@
 @napsternetvirani
 @net2ray
 @netfreedom0
+@netshot1
 @networld_vpn
 @nexus_panell
 @oneclickvpnkeys
